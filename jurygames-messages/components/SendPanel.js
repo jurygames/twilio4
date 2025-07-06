@@ -1,16 +1,34 @@
 // components/SendPanel.js
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import templatesData from '../data/templates.js';
 
-export default function SendPanel({ groups, templates }) {
+export default function SendPanel({ groups }) {
   const [selectedGroupIndex, setSelectedGroupIndex] = useState(0);
+  const [selectedShow, setSelectedShow] = useState('');
+  const [showOptions, setShowOptions] = useState([]);
+  const [filteredTemplates, setFilteredTemplates] = useState([]);
   const [selectedTemplateIndex, setSelectedTemplateIndex] = useState(0);
   const [status, setStatus] = useState('');
+
+  // Derive unique shows from templatesData
+  useEffect(() => {
+    const shows = Array.from(new Set(templatesData.map(t => t.show)));
+    setShowOptions(shows);
+    setSelectedShow(shows[0] || '');
+  }, []);
+
+  // Filter templates when show changes
+  useEffect(() => {
+    const list = templatesData.filter(t => t.show === selectedShow);
+    setFilteredTemplates(list);
+    setSelectedTemplateIndex(0);
+  }, [selectedShow]);
 
   const send = async () => {
     setStatus('Sending...');
     try {
       const group = groups[selectedGroupIndex];
-      const template = templates[selectedTemplateIndex];
+      const template = filteredTemplates[selectedTemplateIndex];
       const res = await fetch('/api/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -41,13 +59,24 @@ export default function SendPanel({ groups, templates }) {
         ))}
       </select>
 
+      <label className="block text-sm mb-1">Select Show</label>
+      <select
+        className="w-full mb-2 p-2 bg-gray-800 rounded"
+        value={selectedShow}
+        onChange={e => setSelectedShow(e.target.value)}
+      >
+        {showOptions.map((show, idx) => (
+          <option key={idx} value={show}>{show}</option>
+        ))}
+      </select>
+
       <label className="block text-sm mb-1">Select Template</label>
       <select
         className="w-full mb-2 p-2 bg-gray-800 rounded"
         value={selectedTemplateIndex}
         onChange={e => setSelectedTemplateIndex(Number(e.target.value))}
       >
-        {templates.map((t, i) => (
+        {filteredTemplates.map((t, i) => (
           <option key={i} value={i}>
             {t.name} ({t.type})
           </option>
