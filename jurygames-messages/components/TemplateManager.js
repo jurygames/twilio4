@@ -6,21 +6,21 @@ export default function TemplateManager() {
   const [originalTemplates, setOriginalTemplates] = useState([]);
   const [shows, setShows] = useState([]);
   const [filterShow, setFilterShow] = useState('');
+
   const [newShow, setNewShow] = useState('');
 
   // Fetch templates on mount
   const fetchTemplates = async () => {
     const res = await fetch('/api/templates');
     const data = await res.json();
-    // Deep clone to break reference sharing
+    // Deep clone
     const cloned = data.map(t => ({ ...t }));
     setTemplates(cloned);
     setOriginalTemplates(cloned.map(t => ({ ...t })));
     const uniqueShows = Array.from(new Set(data.map(t => t.show)));
     setShows(uniqueShows);
-    // Default to first show if none selected
     if (!filterShow && uniqueShows.length > 0) {
-      setFilterShow(uniqueShows.includes('Scott Davies') ? 'Scott Davies' : uniqueShows[0]);
+      setFilterShow(uniqueShows[0]);
     }
   };
 
@@ -28,42 +28,42 @@ export default function TemplateManager() {
     fetchTemplates();
   }, []);
 
-  // Local update by id
-  const updateLocal = (id, field, value) => {
-    setTemplates(prev =>
-      prev.map(t => (t.id === id ? { ...t, [field]: value } : t))
-    );
-  };
-
-  // Save to Supabase
-  const saveTemplate = async id => {
-    const tpl = templates.find(t => t.id === id);
-    const { id: tplId, ...updatedFields } = tpl;
-    await fetch(`/api/templates/${tplId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updatedFields),
+  // Update based on global index
+  const updateLocal = (index, field, value) => {
+    setTemplates(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
     });
   };
 
-  // Revert to original
-  const revertTemplate = id => {
-    const original = originalTemplates.find(t => t.id === id);
-    if (original) {
-      setTemplates(prev =>
-        prev.map(t => (t.id === id ? { ...original } : t))
-      );
-    }
+  const saveTemplate = async (index) => {
+    const tpl = templates[index];
+    const { id, ...fields } = tpl;
+    await fetch(`/api/templates/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fields),
+    });
   };
 
-  // Delete with confirmation
-  const deleteTemplate = async id => {
+  const revertTemplate = (index) => {
+    const original = originalTemplates[index];
+    setTemplates(prev => {
+      const updated = [...prev];
+      updated[index] = { ...original };
+      return updated;
+    });
+  };
+
+  const deleteTemplate = async (index) => {
+    const tpl = templates[index];
     if (!confirm('Are you sure you want to PERMANENTLY delete this template?')) {
       return;
     }
-    await fetch(`/api/templates/${id}`, { method: 'DELETE' });
-    setTemplates(prev => prev.filter(t => t.id !== id));
-    setOriginalTemplates(prev => prev.filter(t => t.id !== id));
+    await fetch(`/api/templates/${tpl.id}`, { method: 'DELETE' });
+    setTemplates(prev => prev.filter((_, i) => i !== index));
+    setOriginalTemplates(prev => prev.filter((_, i) => i !== index));
   };
 
   const addTemplate = async () => {
@@ -83,10 +83,8 @@ export default function TemplateManager() {
       body: JSON.stringify(newTpl),
     });
     const created = await res.json();
-    // clone new template
-    const clonedTpl = { ...created };
-    setTemplates(prev => [...prev, clonedTpl]);
-    setOriginalTemplates(prev => [...prev, clonedTpl]);
+    setTemplates(prev => [...prev, { ...created }]);
+    setOriginalTemplates(prev => [...prev, { ...created }]);
   };
 
   const addShow = () => {
@@ -97,9 +95,10 @@ export default function TemplateManager() {
     }
   };
 
-  const visibleTemplates = filterShow
-    ? templates.filter(t => t.show === filterShow)
-    : [];
+  // Build list of entries with index
+  const visible = templates
+    .map((tpl, idx) => ({ tpl, idx }))
+    .filter(({ tpl }) => tpl.show === filterShow);
 
   return (
     <div>
@@ -118,18 +117,18 @@ export default function TemplateManager() {
         </select>
       </div>
 
-      {visibleTemplates.map(tpl => (
-        <div key={tpl.id} className="mb-4 p-4 bg-gray-800 rounded">
+      {visible.map(({ tpl, idx }) => (
+        <div key={idx} className="mb-4 p-4 bg-gray-800 rounded">
           <input
             className="w-full p-2 bg-gray-900 rounded mb-2"
-            value={tpl.name || ''}
-            onChange={e => updateLocal(tpl.id, 'name', e.target.value)}
+            value={tpl.name}
+            onChange={e => updateLocal(idx, 'name', e.target.value)}
             placeholder="Template Name"
           />
           <select
             className="w-full p-2 bg-gray-900 rounded mb-2"
             value={tpl.type}
-            onChange={e => updateLocal(tpl.id, 'type', e.target.value)}
+            onChange={e => updateLocal(idx, 'type', e.target.value)}
           >
             <option>SMS</option>
             <option>WhatsApp</option>
@@ -138,7 +137,7 @@ export default function TemplateManager() {
           <select
             className="w-full p-2 bg-gray-900 rounded mb-2"
             value={tpl.from_number}
-            onChange={e => updateLocal(tpl.id, 'from_number', e.target.value)}
+            onChange={e => updateLocal(idx, 'from_number', e.target.value)}
           >
             <option>+447723453049</option>
             <option>+447480780992</option>
@@ -148,7 +147,7 @@ export default function TemplateManager() {
             <input
               className="w-full p-2 bg-gray-900 rounded mb-2 resize-none"
               value={tpl.media_url || ''}
-              onChange={e => updateLocal(tpl.id, 'media_url', e.target.value)}
+              onChange={e => updateLocal(idx, 'media_url', e.target.value)}
               placeholder="MP3 URL"
             />
           ) : (
@@ -157,9 +156,10 @@ export default function TemplateManager() {
               rows={1}
               value={tpl.content || ''}
               onChange={e => {
-                updateLocal(tpl.id, 'content', e.target.value);
-                e.target.style.height = 'auto';
-                e.target.style.height = e.target.scrollHeight + 'px';
+                updateLocal(idx, 'content', e.target.value);
+                const ta = e.target;
+                ta.style.height = 'auto';
+                ta.style.height = ta.scrollHeight + 'px';
               }}
               placeholder="Message Content"
             />
@@ -169,28 +169,29 @@ export default function TemplateManager() {
             rows={1}
             value={tpl.summary || ''}
             onChange={e => {
-                updateLocal(tpl.id, 'summary', e.target.value);
-                e.target.style.height = 'auto';
-                e.target.style.height = e.target.scrollHeight + 'px';
+              updateLocal(idx, 'summary', e.target.value);
+              const ta = e.target;
+              ta.style.height = 'auto';
+              ta.style.height = ta.scrollHeight + 'px';
             }}
             placeholder="Summary of this template"
           />
           <div className="flex space-x-2">
             <button
               className="bg-yellow-500 px-3 py-1 rounded"
-              onClick={() => revertTemplate(tpl.id)}
+              onClick={() => revertTemplate(idx)}
             >
               Revert
             </button>
             <button
               className="bg-green-500 px-3 py-1 rounded"
-              onClick={() => saveTemplate(tpl.id)}
+              onClick={() => saveTemplate(idx)}
             >
               Save
             </button>
             <button
               className="bg-red-600 px-3 py-1 rounded"
-              onClick={() => deleteTemplate(tpl.id)}
+              onClick={() => deleteTemplate(idx)}
             >
               Delete
             </button>
