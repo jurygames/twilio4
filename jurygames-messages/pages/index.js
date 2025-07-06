@@ -18,7 +18,7 @@ export default function Home() {
       </Head>
       <div className="dark bg-gray-900 text-white min-h-screen">
         <header className="bg-[#333F50] py-6 flex items-center justify-center">
-          <h1 className="text-3xl font-bold font-['Roboto_Condensed'] uppercase text-white">
+          <h1 className="text-5xl font-bold font-['Roboto_Condensed'] uppercase text-white">
             Jury Games
           </h1>
         </header>
