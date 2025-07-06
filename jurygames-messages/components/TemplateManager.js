@@ -19,20 +19,18 @@ export default function TemplateManager() {
     fetchTemplates();
   }, []);
 
-  // Local update
-  const updateLocal = (idx, field, value) => {
-    setTemplates(prev => {
-      const updated = [...prev];
-      updated[idx] = { ...updated[idx], [field]: value };
-      return updated;
-    });
+  // Local update by id
+  const updateLocal = (id, field, value) => {
+    setTemplates(prev =>
+      prev.map(t => (t.id === id ? { ...t, [field]: value } : t))
+    );
   };
 
   // Save to Supabase
-  const saveTemplate = async (idx) => {
-    const tpl = templates[idx];
-    const { id, ...updatedFields } = tpl;
-    const res = await fetch(`/api/templates/${id}`, {
+  const saveTemplate = async id => {
+    const tpl = templates.find(t => t.id === id);
+    const { id: tplId, ...updatedFields } = tpl;
+    const res = await fetch(`/api/templates/${tplId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedFields),
@@ -44,18 +42,25 @@ export default function TemplateManager() {
   };
 
   // Delete with confirmation
-  const deleteTemplate = async (idx) => {
-    const tpl = templates[idx];
+  const deleteTemplate = async id => {
     if (!confirm('Are you sure you want to PERMANENTLY delete this template?')) {
       return;
     }
-    await fetch(`/api/templates/${tpl.id}`, { method: 'DELETE' });
-    setTemplates(prev => prev.filter((_, i) => i !== idx));
+    await fetch(`/api/templates/${id}`, { method: 'DELETE' });
+    setTemplates(prev => prev.filter(t => t.id !== id));
   };
 
   const addTemplate = async () => {
     if (!filterShow) return;
-    const newTpl = { name: '', type: 'SMS', show: filterShow, from_number: '+447723453049', content: '', media_url: '', summary: '' };
+    const newTpl = {
+      name: '',
+      type: 'SMS',
+      show: filterShow,
+      from_number: '+447723453049',
+      content: '',
+      media_url: '',
+      summary: ''
+    };
     const res = await fetch('/api/templates', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -73,7 +78,9 @@ export default function TemplateManager() {
     }
   };
 
-  const visibleTemplates = filterShow ? templates.filter(t => t.show === filterShow) : [];
+  const visibleTemplates = filterShow
+    ? templates.filter(t => t.show === filterShow)
+    : [];
 
   return (
     <div>
@@ -92,18 +99,18 @@ export default function TemplateManager() {
         </select>
       </div>
 
-      {visibleTemplates.map((tpl, idx) => (
+      {visibleTemplates.map(tpl => (
         <div key={tpl.id} className="mb-4 p-4 bg-gray-800 rounded">
           <input
             className="w-full p-2 bg-gray-900 rounded mb-2"
-            value={tpl.name}
-            onChange={e => updateLocal(idx, 'name', e.target.value)}
+            value={tpl.name || ''}
+            onChange={e => updateLocal(tpl.id, 'name', e.target.value)}
             placeholder="Template Name"
           />
           <select
             className="w-full p-2 bg-gray-900 rounded mb-2"
             value={tpl.type}
-            onChange={e => updateLocal(idx, 'type', e.target.value)}
+            onChange={e => updateLocal(tpl.id, 'type', e.target.value)}
           >
             <option>SMS</option>
             <option>WhatsApp</option>
@@ -112,7 +119,7 @@ export default function TemplateManager() {
           <select
             className="w-full p-2 bg-gray-900 rounded mb-2"
             value={tpl.from_number}
-            onChange={e => updateLocal(idx, 'from_number', e.target.value)}
+            onChange={e => updateLocal(tpl.id, 'from_number', e.target.value)}
           >
             <option>+447723453049</option>
             <option>+447480780992</option>
@@ -122,7 +129,7 @@ export default function TemplateManager() {
             <input
               className="w-full p-2 bg-gray-900 rounded mb-2"
               value={tpl.media_url || ''}
-              onChange={e => updateLocal(idx, 'media_url', e.target.value)}
+              onChange={e => updateLocal(tpl.id, 'media_url', e.target.value)}
               placeholder="MP3 URL"
             />
           ) : (
@@ -130,7 +137,7 @@ export default function TemplateManager() {
               className="w-full p-2 bg-gray-900 rounded mb-2"
               rows="2"
               value={tpl.content || ''}
-              onChange={e => updateLocal(idx, 'content', e.target.value)}
+              onChange={e => updateLocal(tpl.id, 'content', e.target.value)}
               placeholder="Message Content"
             />
           )}
@@ -138,19 +145,19 @@ export default function TemplateManager() {
             className="w-full p-2 bg-gray-900 rounded mb-2"
             rows="2"
             value={tpl.summary || ''}
-            onChange={e => updateLocal(idx, 'summary', e.target.value)}
+            onChange={e => updateLocal(tpl.id, 'summary', e.target.value)}
             placeholder="Summary of this template"
           />
           <div className="flex space-x-2">
             <button
               className="bg-green-500 px-3 py-1 rounded"
-              onClick={() => saveTemplate(idx)}
+              onClick={() => saveTemplate(tpl.id)}
             >
               Save
             </button>
             <button
               className="bg-red-600 px-3 py-1 rounded"
-              onClick={() => deleteTemplate(idx)}
+              onClick={() => deleteTemplate(tpl.id)}
             >
               Delete
             </button>
@@ -168,7 +175,7 @@ export default function TemplateManager() {
         </button>
       </div>
 
-      <div className="mt-6 flex items-  center">
+      <div className="mt-6 flex items-center">
         <input
           className="p-2 bg-gray-800 rounded mr-2"
           placeholder="New Show Name"
