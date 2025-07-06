@@ -3,8 +3,9 @@ import { useState, useEffect } from 'react';
 
 export default function TemplateManager() {
   const [templates, setTemplates] = useState([]);
+  const [originalTemplates, setOriginalTemplates] = useState([]);
   const [shows, setShows] = useState([]);
-  const [filterShow, setFilterShow] = useState('');
+  const [filterShow, setFilterShow] = useState('Harry Briggs');
   const [newShow, setNewShow] = useState('');
 
   // Fetch templates on mount
@@ -12,7 +13,12 @@ export default function TemplateManager() {
     const res = await fetch('/api/templates');
     const data = await res.json();
     setTemplates(data);
-    setShows(Array.from(new Set(data.map(t => t.show))));
+    setOriginalTemplates(data);
+    const uniqueShows = Array.from(new Set(data.map(t => t.show)));
+    setShows(uniqueShows);
+    if (!uniqueShows.includes('Harry Briggs')) {
+      setFilterShow(uniqueShows[0] || '');
+    }
   };
 
   useEffect(() => {
@@ -30,14 +36,20 @@ export default function TemplateManager() {
   const saveTemplate = async id => {
     const tpl = templates.find(t => t.id === id);
     const { id: tplId, ...updatedFields } = tpl;
-    const res = await fetch(`/api/templates/${tplId}`, {
+    await fetch(`/api/templates/${tplId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedFields),
     });
-    if (!res.ok) {
-      const err = await res.json();
-      alert('Save failed: ' + err.error);
+  };
+
+  // Revert to original
+  const revertTemplate = id => {
+    const original = originalTemplates.find(t => t.id === id);
+    if (original) {
+      setTemplates(prev =>
+        prev.map(t => (t.id === id ? { ...original } : t))
+      );
     }
   };
 
@@ -48,6 +60,7 @@ export default function TemplateManager() {
     }
     await fetch(`/api/templates/${id}`, { method: 'DELETE' });
     setTemplates(prev => prev.filter(t => t.id !== id));
+    setOriginalTemplates(prev => prev.filter(t => t.id !== id));
   };
 
   const addTemplate = async () => {
@@ -68,6 +81,7 @@ export default function TemplateManager() {
     });
     const created = await res.json();
     setTemplates(prev => [...prev, created]);
+    setOriginalTemplates(prev => [...prev, created]);
   };
 
   const addShow = () => {
@@ -127,28 +141,42 @@ export default function TemplateManager() {
           </select>
           {tpl.type === 'Call' ? (
             <input
-              className="w-full p-2 bg-gray-900 rounded mb-2"
+              className="w-full p-2 bg-gray-900 rounded mb-2 resize-none"
               value={tpl.media_url || ''}
               onChange={e => updateLocal(tpl.id, 'media_url', e.target.value)}
               placeholder="MP3 URL"
             />
           ) : (
             <textarea
-              className="w-full p-2 bg-gray-900 rounded mb-2"
-              rows="2"
+              className="w-full p-2 bg-gray-900 rounded mb-2 resize-none overflow-hidden"
+              rows={1}
               value={tpl.content || ''}
-              onChange={e => updateLocal(tpl.id, 'content', e.target.value)}
+              onChange={e => {
+                updateLocal(tpl.id, 'content', e.target.value);
+                e.target.style.height = 'auto';
+                e.target.style.height = e.target.scrollHeight + 'px';
+              }}
               placeholder="Message Content"
             />
           )}
           <textarea
-            className="w-full p-2 bg-gray-900 rounded mb-2"
-            rows="2"
+            className="w-full p-2 bg-gray-900 rounded mb-2 resize-none overflow-hidden"
+            rows={1}
             value={tpl.summary || ''}
-            onChange={e => updateLocal(tpl.id, 'summary', e.target.value)}
+            onChange={e => {
+                updateLocal(tpl.id, 'summary', e.target.value);
+                e.target.style.height = 'auto';
+                e.target.style.height = e.target.scrollHeight + 'px';
+            }}
             placeholder="Summary of this template"
           />
           <div className="flex space-x-2">
+            <button
+              className="bg-yellow-500 px-3 py-1 rounded"
+              onClick={() => revertTemplate(tpl.id)}
+            >
+              Revert
+            </button>
             <button
               className="bg-green-500 px-3 py-1 rounded"
               onClick={() => saveTemplate(tpl.id)}
