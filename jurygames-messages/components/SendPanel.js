@@ -16,11 +16,7 @@ export default function SendPanel({ groups, onLog }) {
   useEffect(() => {
     const shows = Array.from(new Set(templatesData.map(t => t.show)));
     setShowOptions(shows);
-    if (shows.includes('Harry Briggs')) {
-      setSelectedShow('Harry Briggs');
-    } else {
-      setSelectedShow(shows[0] || '');
-    }
+    setSelectedShow(shows.includes('Harry Briggs') ? 'Harry Briggs' : (shows[0] || ''));
   }, []);
 
   useEffect(() => {
@@ -56,7 +52,7 @@ export default function SendPanel({ groups, onLog }) {
         groupName: group.name,
       });
     } catch (err) {
-      setStatus(\`Error: \${err.message}\`);
+      setStatus('Error: ' + err.message);
       onLog({
         time: new Date(),
         type: 'Error',
