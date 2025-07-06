@@ -10,14 +10,12 @@ export default function SendPanel({ groups, onLog }) {
   const [selectedTemplateIndex, setSelectedTemplateIndex] = useState(0);
   const [status, setStatus] = useState('');
 
-  // Derive unique shows from templatesData
   useEffect(() => {
     const shows = Array.from(new Set(templatesData.map(t => t.show)));
     setShowOptions(shows);
     setSelectedShow(shows[0] || '');
   }, []);
 
-  // Filter templates when show changes
   useEffect(() => {
     const list = templatesData.filter(t => t.show === selectedShow);
     setFilteredTemplates(list);
@@ -37,17 +35,27 @@ export default function SendPanel({ groups, onLog }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Send failed');
       setStatus('Sent successfully');
-      // Log without storing phone numbers
-      onLog({ time: new Date(), type: template.type, template: template.name, count: group.list.length });
+      onLog({
+        time: new Date(),
+        type: template.type,
+        template: template.name,
+        groupName: group.name
+      });
     } catch (err) {
       setStatus(`Error: ${err.message}`);
-      onLog({ time: new Date(), type: 'Error', message: err.message });
+      onLog({
+        time: new Date(),
+        type: 'Error',
+        message: err.message
+      });
     }
   };
 
   return (
     <div className="mb-4">
-      <h2 className="text-xl font-semibold mb-2">📤📲 Send Message or Call</h2>
+      <h2 className="text-xl font-bold font-['Roboto_Condensed'] uppercase mb-2">
+        📤📲 Send Message or Call
+      </h2>
 
       <label className="block text-sm mb-1">Select Group</label>
       <select
@@ -56,7 +64,7 @@ export default function SendPanel({ groups, onLog }) {
         onChange={e => setSelectedGroupIndex(Number(e.target.value))}
       >
         {groups.map((g, i) => (
-          <option key={i} value={i}>{g.name} ({g.list.length})</option>
+          <option key={i} value={i}>{g.name} ({g.list.length} {g.list.length === 1 ? 'number' : 'numbers'})</option>
         ))}
       </select>
 

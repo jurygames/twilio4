@@ -44,7 +44,9 @@ export default function GroupManager({ onGroupsChange }) {
 
   return (
     <div className="mb-4">
-      <h2 className="text-xl font-semibold mb-2">🧑‍🧑‍🧒‍🧒 Groups</h2>
+      <h2 className="text-xl font-bold font-['Roboto_Condensed'] uppercase mb-2">
+        🧑‍🧑‍🧒‍🧒 Groups
+      </h2>
       <textarea
         className="w-full p-2 bg-gray-800 rounded mb-2"
         rows="3"
