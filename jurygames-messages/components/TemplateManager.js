@@ -5,19 +5,22 @@ export default function TemplateManager() {
   const [templates, setTemplates] = useState([]);
   const [originalTemplates, setOriginalTemplates] = useState([]);
   const [shows, setShows] = useState([]);
-  const [filterShow, setFilterShow] = useState('Harry Briggs');
+  const [filterShow, setFilterShow] = useState('');
   const [newShow, setNewShow] = useState('');
 
   // Fetch templates on mount
   const fetchTemplates = async () => {
     const res = await fetch('/api/templates');
     const data = await res.json();
-    setTemplates(data);
-    setOriginalTemplates(data);
+    // Deep clone to break reference sharing
+    const cloned = data.map(t => ({ ...t }));
+    setTemplates(cloned);
+    setOriginalTemplates(cloned.map(t => ({ ...t })));
     const uniqueShows = Array.from(new Set(data.map(t => t.show)));
     setShows(uniqueShows);
-    if (!uniqueShows.includes('Harry Briggs')) {
-      setFilterShow(uniqueShows[0] || '');
+    // Default to first show if none selected
+    if (!filterShow && uniqueShows.length > 0) {
+      setFilterShow(uniqueShows.includes('Scott Davies') ? 'Scott Davies' : uniqueShows[0]);
     }
   };
 
@@ -80,8 +83,10 @@ export default function TemplateManager() {
       body: JSON.stringify(newTpl),
     });
     const created = await res.json();
-    setTemplates(prev => [...prev, created]);
-    setOriginalTemplates(prev => [...prev, created]);
+    // clone new template
+    const clonedTpl = { ...created };
+    setTemplates(prev => [...prev, clonedTpl]);
+    setOriginalTemplates(prev => [...prev, clonedTpl]);
   };
 
   const addShow = () => {
