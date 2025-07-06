@@ -8,9 +8,11 @@ export default function Admin() {
     <>
       <Head>
         <title>Template Management | Jury Games</title>
+        <link rel="icon" type="image/png" href="/favicon.png" />
       </Head>
       <div className="dark bg-gray-900 text-white min-h-screen">
-        <header className="bg-[#333F50] py-6 flex items-center justify-center">
+        <header className="bg-[#333F50] py-6 flex items-center justify-center space-x-4">
+          <img src="/favicon.png" alt="Jury Games Logo" className="h-8 filter invert" />
           <h1 className="text-3xl font-bold font-['Roboto_Condensed'] uppercase text-white">
             Template Management
           </h1>
