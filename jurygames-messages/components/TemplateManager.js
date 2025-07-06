@@ -6,14 +6,12 @@ export default function TemplateManager() {
   const [originalTemplates, setOriginalTemplates] = useState([]);
   const [shows, setShows] = useState([]);
   const [filterShow, setFilterShow] = useState('');
-
   const [newShow, setNewShow] = useState('');
 
-  // Fetch templates on mount
+  // Fetch templates on mount and refresh
   const fetchTemplates = async () => {
     const res = await fetch('/api/templates');
     const data = await res.json();
-    // Deep clone
     const cloned = data.map(t => ({ ...t }));
     setTemplates(cloned);
     setOriginalTemplates(cloned.map(t => ({ ...t })));
@@ -28,7 +26,6 @@ export default function TemplateManager() {
     fetchTemplates();
   }, []);
 
-  // Update based on global index
   const updateLocal = (index, field, value) => {
     setTemplates(prev => {
       const updated = [...prev];
@@ -40,11 +37,18 @@ export default function TemplateManager() {
   const saveTemplate = async (index) => {
     const tpl = templates[index];
     const { id, ...fields } = tpl;
-    await fetch(`/api/templates/${id}`, {
+    const res = await fetch(`/api/templates/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(fields),
     });
+    if (res.ok) {
+      // refresh to persist changes
+      await fetchTemplates();
+    } else {
+      const err = await res.json();
+      alert('Save failed: ' + err.error);
+    }
   };
 
   const revertTemplate = (index) => {
@@ -82,9 +86,9 @@ export default function TemplateManager() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newTpl),
     });
-    const created = await res.json();
-    setTemplates(prev => [...prev, { ...created }]);
-    setOriginalTemplates(prev => [...prev, { ...created }]);
+    if (res.ok) {
+      await fetchTemplates();
+    }
   };
 
   const addShow = () => {
@@ -95,7 +99,6 @@ export default function TemplateManager() {
     }
   };
 
-  // Build list of entries with index
   const visible = templates
     .map((tpl, idx) => ({ tpl, idx }))
     .filter(({ tpl }) => tpl.show === filterShow);
@@ -224,5 +227,5 @@ export default function TemplateManager() {
         </button>
       </div>
     </div>
-  );
+  ); 
 }
