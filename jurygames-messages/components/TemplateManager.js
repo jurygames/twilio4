@@ -8,7 +8,6 @@ export default function TemplateManager() {
   const [filterShow, setFilterShow] = useState('');
   const [newShow, setNewShow] = useState('');
 
-  // Initialize templates and shows
   useEffect(() => {
     setTemplates(templatesData);
     const uniqueShows = Array.from(new Set(templatesData.map(t => t.show)));
@@ -26,14 +25,6 @@ export default function TemplateManager() {
     setTemplates(templates.filter((_, i) => i !== idx));
   };
 
-  const addShow = () => {
-    if (newShow && !shows.includes(newShow)) {
-      setShows(prev => [...prev, newShow]);
-      setFilterShow(newShow);
-      setNewShow('');
-    }
-  };
-
   const addTemplate = () => {
     if (!filterShow) return;
     const newTpl = {
@@ -42,9 +33,18 @@ export default function TemplateManager() {
       show: filterShow,
       from: '+447723453049',
       content: '',
-      mediaUrl: ''
+      mediaUrl: '',
+      summary: ''
     };
     setTemplates(prev => [...prev, newTpl]);
+  };
+
+  const addShow = () => {
+    if (newShow && !shows.includes(newShow)) {
+      setShows(prev => [...prev, newShow]);
+      setFilterShow(newShow);
+      setNewShow('');
+    }
   };
 
   const visibleTemplates = filterShow
@@ -69,11 +69,6 @@ export default function TemplateManager() {
           ))}
         </select>
       </div>
-
-      {visibleTemplates.length === 0 && filterShow && (
-        <p className="mb-4 text-gray-300">No templates for "{filterShow}"</p>
-      )}
-
       {visibleTemplates.map((tpl, idx) => (
         <div key={idx} className="mb-4 p-4 bg-gray-800 rounded">
           <input
@@ -116,6 +111,13 @@ export default function TemplateManager() {
               placeholder="Message Content"
             />
           )}
+          <textarea
+            className="w-full p-2 bg-gray-900 rounded mb-2"
+            rows="2"
+            value={tpl.summary || ''}
+            onChange={e => saveTemplate(idx, { summary: e.target.value })}
+            placeholder="Summary of this template"
+          />
           <button
             className="bg-red-600 px-3 py-1 rounded"
             onClick={() => deleteTemplate(idx)}
@@ -124,7 +126,6 @@ export default function TemplateManager() {
           </button>
         </div>
       ))}
-
       <div className="mt-4">
         <button
           className="bg-green-500 px-4 py-2 rounded"
@@ -134,7 +135,6 @@ export default function TemplateManager() {
           Add Template
         </button>
       </div>
-
       <div className="mt-6 flex items-center">
         <input
           className="p-2 bg-gray-800 rounded mr-2"

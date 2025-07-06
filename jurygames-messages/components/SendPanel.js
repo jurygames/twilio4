@@ -22,11 +22,18 @@ export default function SendPanel({ groups, onLog }) {
     setSelectedTemplateIndex(0);
   }, [selectedShow]);
 
-  const send = async () => {
+  const handleSend = async () => {
+    const group = groups[selectedGroupIndex];
+    const template = filteredTemplates[selectedTemplateIndex];
+    const summary = template.summary || '';
+    const confirmMsg = `This will send "${template.name}" to "${group.name}".
+The summary of this communication is:
+"${summary}"
+
+Press OK to continue, or Cancel.`;
+    if (!confirm(confirmMsg)) return;
     setStatus('Sending...');
     try {
-      const group = groups[selectedGroupIndex];
-      const template = filteredTemplates[selectedTemplateIndex];
       const res = await fetch('/api/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -56,7 +63,6 @@ export default function SendPanel({ groups, onLog }) {
       <h2 className="text-xl font-bold font-['Roboto_Condensed'] uppercase mb-2">
         📤📲 Send Message or Call
       </h2>
-
       <label className="block text-sm mb-1">Select Group</label>
       <select
         className="w-full mb-2 p-2 bg-gray-800 rounded"
@@ -67,7 +73,6 @@ export default function SendPanel({ groups, onLog }) {
           <option key={i} value={i}>{g.name} ({g.list.length} {g.list.length === 1 ? 'number' : 'numbers'})</option>
         ))}
       </select>
-
       <label className="block text-sm mb-1">Select Show</label>
       <select
         className="w-full mb-2 p-2 bg-gray-800 rounded"
@@ -76,7 +81,6 @@ export default function SendPanel({ groups, onLog }) {
       >
         {showOptions.map((s, idx) => <option key={idx} value={s}>{s}</option>)}
       </select>
-
       <label className="block text-sm mb-1">Select Template</label>
       <select
         className="w-full mb-2 p-2 bg-gray-800 rounded"
@@ -87,11 +91,9 @@ export default function SendPanel({ groups, onLog }) {
           <option key={i} value={i}>{t.name} ({t.type})</option>
         ))}
       </select>
-
-      <button className="bg-green-500 px-4 py-2 rounded" onClick={send}>
+      <button className="bg-green-500 px-4 py-2 rounded" onClick={handleSend}>
         Send
       </button>
-
       <p className="mt-2 text-gray-300">{status}</p>
     </div>
 );
