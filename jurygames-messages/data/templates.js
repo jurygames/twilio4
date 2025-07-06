@@ -1,145 +1,181 @@
 // data/templates.js
 const templates = [
   {
-    name: "Info – Scott Davies",
+    name: "Knockknock - Please email me",
     type: "SMS",
     show: "Scott Davies",
     from: "+447723453049",
-    content: "I’m so sorry to reach out like this, but I have information about the Scott Davies case. Please email me at knockknock502@gmail.com\nIt’s about Reggie and Mel"
+    content: "I\u2019m so sorry to reach out like this, but I have information about the Scott Davies case. Please email me at knockknock502@gmail.com\nIt\u2019s about Reggie and Mel",
+    summary: "An anonymous source (Sally Burns) reaches out to ask the players to email her at the knockknock email address to discuss something to do with Reggie and Mel.",
   },
   {
-    name: "Info – Scott Davies (US+)",
+    name: "Knockknock - Please email me (US+)",
     type: "SMS",
     show: "Scott Davies",
     from: "+18448997279",
-    content: "I’m so sorry to reach out like this, but I have information about the Scott Davies case. Please email me at knockknock502@gmail.com\nIt’s about Reggie and Mel"
+    content: "I\u2019m so sorry to reach out like this, but I have information about the Scott Davies case. Please email me at knockknock502@gmail.com\nIt\u2019s about Reggie and Mel",
+    summary: "An anonymous source (Sally Burns) reaches out to ask the players to email her at the knockknock email address to discuss something to do with Reggie and Mel.",
   },
   {
-    name: "Help Link",
+    name: "UKCellnet nudge",
     type: "SMS",
     show: "Scott Davies",
     from: "+447723453049",
-    content: "I’m still trying to help you and your colleagues where I can. You may find something very useful here: https://www.ukcellnet.co.uk/\nSee anyone familiar?"
+    content: "I\u2019m still trying to help you and your colleagues where I can. You may find something very useful here: https://www.ukcellnet.co.uk/\nSee anyone familiar?",
+    summary: "A nudge from Sally (who remains anonymous) telling the players to investigate the UK Cellnet website.",
   },
   {
-    name: "Help Link (US+)",
+    name: "UKCellnet nudge (US+)",
     type: "SMS",
     show: "Scott Davies",
     from: "+18448997279",
-    content: "I’m still trying to help you and your colleagues where I can. You may find something very useful here: https://www.ukcellnet.co.uk/\nSee anyone familiar?"
+    content: "I\u2019m still trying to help you and your colleagues where I can. You may find something very useful here: https://www.ukcellnet.co.uk/\nSee anyone familiar?",
+    summary: "A nudge from Sally (who remains anonymous) telling the players to investigate the UK Cellnet website.",
   },
   {
-    name: "Hook Message",
+    name: "Text 1",
     type: "SMS",
     show: "Harry Briggs",
     from: "+447723453049",
-    content: "They've got you on a hook, little fish. You're not seeing the big picture.\nRichard Holmes wasn't a cleaner.\nDon't take my word for it. Look him up on their own database.\nHis name was Richard Holmes. Look him up.\n\nStop being the fish. Start being the hook."
+    content: "They've got you on a hook, little fish. You're not seeing the big picture.\nRichard Holmes wasn't a cleaner.\nDon't take my word for it. Look him up on their own database.\nHis name was Richard Holmes. Look him up.\n\nStop being the fish. Start being the hook.",
+    summary: "A cryptic hint about being a 'little fish' who is unaware that Richard Holmes isn't a cleaner.",
   },
   {
-    name: "Hook Message (US+)",
+    name: "Text 1 (US+)",
     type: "SMS",
     show: "Harry Briggs",
     from: "+18448997279",
-    content: "They've got you on a hook, little fish. You're not seeing the big picture.\nRichard Holmes wasn't a cleaner.\nDon't take my word for it. Look him up on their own database.\nHis name was Richard Holmes. Look him up.\n\nStop being the fish. Start being the hook."
+    content: "They've got you on a hook, little fish. You're not seeing the big picture.\nRichard Holmes wasn't a cleaner.\nDon't take my word for it. Look him up on their own database.\nHis name was Richard Holmes. Look him up.\n\nStop being the fish. Start being the hook.",
+    summary: "A cryptic hint about being a 'little fish' who is unaware that Richard Holmes isn't a cleaner.",
   },
   {
     name: "Favour for Chris",
     type: "SMS",
     show: "Scott Davies",
     from: "+447723453049",
-    content: "Tell Chris this is the last favour like this I do... Interpol isn't a personal Google! https://tinyurl.com/y57vk6c7"
+    content: "Tell Chris this is the last favour like this I do... Interpol isn't a personal Google! https://tinyurl.com/y57vk6c7",
+    summary: "The leader coroner's source at Interpol comes through and sends a link to the Panama news report about a businessman dying.",
   },
   {
     name: "Favour for Chris (US+)",
     type: "SMS",
     show: "Scott Davies",
     from: "+18448997279",
-    content: "Tell Chris this is the last favour like this I do... Interpol isn't a personal Google! https://tinyurl.com/y57vk6c7"
+    content: "Tell Chris this is the last favour like this I do... Interpol isn't a personal Google! https://tinyurl.com/y57vk6c7",
+    summary: "The leader coroner's source at Interpol comes through and sends a link to the Panama news report about a businessman dying.",
   },
   {
-    name: "PC Evans – Sian IG",
+    name: "PC Evans \u2013 Sian Instagram",
     type: "SMS",
     show: "Christmas Party",
     from: "+447723453049",
-    content: "This is PC Evans. Sian Jones texted me this Instagram post, you can see it for yourself here: tinyurl.com/sianjonesinstagram"
+    content: "This is PC Evans. Sian Jones texted me this Instagram post, you can see it for yourself here: tinyurl.com/sianjonesinstagram",
+    summary: "The Instagram post containing the Instagram picture which shows an elf hat behind Terry Habble's computer.",
   },
   {
-    name: "PC Evans – Sian IG (US+)",
+    name: "PC Evans \u2013 Sian Instagram (US+)",
     type: "SMS",
     show: "Christmas Party",
     from: "+18448997279",
-    content: "This is PC Evans. Sian Jones texted me this Instagram post, you can see it for yourself here: tinyurl.com/sianjonesinstagram"
+    content: "This is PC Evans. Sian Jones texted me this Instagram post, you can see it for yourself here: tinyurl.com/sianjonesinstagram",
+    summary: "The Instagram post containing the Instagram picture which shows an elf hat behind Terry Habble's computer.",
   },
   {
     name: "Harry's Blog",
     type: "SMS",
     show: "Harry Briggs",
     from: "+447480780992",
-    content: "There’s a lot you don’t know about Harry.\n\nI wonder what he’d say if he knew you’d read his blog?\n\nhttps://incendiary-topics.blogspot.com/"
+    content: "There\u2019s a lot you don\u2019t know about Harry.\n\nI wonder what he\u2019d say if he knew you\u2019d read his blog?\n\nhttps://incendiary-topics.blogspot.com/",
+    summary: "A conspiratorial message saying you should read Harry's blog.",
   },
   {
     name: "Harry's Blog (US+)",
     type: "SMS",
     show: "Harry Briggs",
     from: "+18448997279",
-    content: "There’s a lot you don’t know about Harry.\n\nI wonder what he’d say if he knew you’d read his blog?\n\nhttps://incendiary-topics.blogspot.com/"
+    content: "There\u2019s a lot you don\u2019t know about Harry.\n\nI wonder what he\u2019d say if he knew you\u2019d read his blog?\n\nhttps://incendiary-topics.blogspot.com/",
+    summary: "A conspiratorial message saying you should read Harry's blog.",
+  },
+  {
+    name: "Text 2 - MoJ",
+    type: "SMS",
+    show: "Harry Briggs",
+    from: "+447480780992",
+    content: "Thank you for your participation in a remote jury today. You may be eligible for an amnesty on one (1) speeding or parking ticket.\n\nFor more information on the Justice Act, visit https://ministryofjustice.org.uk/",
+    summary: "A thank you message from the MoJ, which really points the player towards the MoJ website.",
+  },
+  {
+    name: "Text 2 - MoJ (US+)",
+    type: "SMS",
+    show: "Harry Briggs",
+    from: "+18448997279",
+    content: "Thank you for your participation in a remote jury today. You may be eligible for an amnesty on one (1) speeding or parking ticket.\n\nFor more information on the Justice Act, visit https://ministryofjustice.org.uk/",
+    summary: "A thank you message from the MoJ, which really points the player towards the MoJ website.",
   },
   {
     name: "Desk Blocking",
     type: "SMS",
     show: "Harry Briggs",
     from: "+447480780992",
-    content: "A man died. Don't forget that.\n\nHow did the desk end up blocking the doorway?"
+    content: "A man died. Don't forget that.\n\nHow did the desk end up blocking the doorway?",
+    summary: "A backup for if Call 2 doesn't work. This text has the same content, asking how a desk ended up blocking the doorway.",
   },
   {
     name: "Desk Blocking (US+)",
     type: "SMS",
     show: "Harry Briggs",
     from: "+18448997279",
-    content: "A man died. Don't forget that.\n\nHow did the desk end up blocking the doorway?"
+    content: "A man died. Don't forget that.\n\nHow did the desk end up blocking the doorway?",
+    summary: "A backup for if Call 2 doesn't work. This text has the same content, asking how a desk ended up blocking the doorway.",
   },
   {
-    name: "TI Sally Call",
+    name: "Sally Call",
     type: "Call",
     show: "Scott Davies",
     from: "+447723453049",
-    mediaUrl: "https://img1.wsimg.com/blobby/go/a1fcfcf6-ebb3-42af-900f-bac6da508cb5/downloads/2649e7ca-7852-40f1-b3f1-fd2a9094f0d1/ti-sally-call.mp3?ver=1751047203736"
+    mediaUrl: "https://img1.wsimg.com/blobby/go/a1fcfcf6-ebb3-42af-900f-bac6da508cb5/downloads/2649e7ca-7852-40f1-b3f1-fd2a9094f0d1/ti-sally-call.mp3?ver=1751047203736",
+    summary: "Sally Burns, still anonymous, uses a robocall to tell the players that Chris Green should have received an email from her.",
   },
   {
-    name: "TI Sally Call (US+)",
+    name: "Sally Call (US+)",
     type: "Call",
     show: "Scott Davies",
     from: "+18448997279",
-    mediaUrl: "https://img1.wsimg.com/blobby/go/a1fcfcf6-ebb3-42af-900f-bac6da508cb5/downloads/2649e7ca-7852-40f1-b3f1-fd2a9094f0d1/ti-sally-call.mp3?ver=1751047203736"
+    mediaUrl: "https://img1.wsimg.com/blobby/go/a1fcfcf6-ebb3-42af-900f-bac6da508cb5/downloads/2649e7ca-7852-40f1-b3f1-fd2a9094f0d1/ti-sally-call.mp3?ver=1751047203736",
+    summary: "Sally Burns, still anonymous, uses a robocall to tell the players that Chris Green should have received an email from her.",
   },
   {
-    name: "JD Call 1",
+    name: "Call 1",
     type: "Call",
     show: "Harry Briggs",
     from: "+447723453049",
-    mediaUrl: "https://img1.wsimg.com/blobby/go/a1fcfcf6-ebb3-42af-900f-bac6da508cb5/downloads/624ab114-69cc-4556-842e-e1485786b325/jd-call-1.mp3?ver=1751047203736"
+    mediaUrl: "https://img1.wsimg.com/blobby/go/a1fcfcf6-ebb3-42af-900f-bac6da508cb5/downloads/624ab114-69cc-4556-842e-e1485786b325/jd-call-1.mp3?ver=1751047203736",
+    summary: "A mysterious robocall calling the players 'little fish', and saying they don't know that Richard Holmes wasn't a cleaner.",
   },
   {
-    name: "JD Call 1 (US+)",
+    name: "Call 1 (US+)",
     type: "Call",
     show: "Harry Briggs",
     from: "+18448997279",
-    mediaUrl: "https://img1.wsimg.com/blobby/go/a1fcfcf6-ebb3-42af-900f-bac6da508cb5/downloads/624ab114-69cc-4556-842e-e1485786b325/jd-call-1.mp3?ver=1751047203736"
+    mediaUrl: "https://img1.wsimg.com/blobby/go/a1fcfcf6-ebb3-42af-900f-bac6da508cb5/downloads/624ab114-69cc-4556-842e-e1485786b325/jd-call-1.mp3?ver=1751047203736",
+    summary: "A mysterious robocall calling the players 'little fish', and saying they don't know that Richard Holmes wasn't a cleaner.",
   },
   {
-    name: "JD Call 2",
+    name: "Call 2",
     type: "Call",
     show: "Harry Briggs",
     from: "+447480780992",
-    mediaUrl: "https://img1.wsimg.com/blobby/go/a1fcfcf6-ebb3-42af-900f-bac6da508cb5/downloads/9dd85999-425a-4546-adad-62ca92194f00/jd-call-2.mp3?ver=1751047203736"
+    mediaUrl: "https://img1.wsimg.com/blobby/go/a1fcfcf6-ebb3-42af-900f-bac6da508cb5/downloads/9dd85999-425a-4546-adad-62ca92194f00/jd-call-2.mp3?ver=1751047203736",
+    summary: "A call asking players not to forget their duty, and asking how a desk ended up blocking the door.",
   },
   {
-    name: "JD Call 2 (US+)",
+    name: "Call 2 (US+)",
     type: "Call",
     show: "Harry Briggs",
     from: "+18448997279",
-    mediaUrl: "https://img1.wsimg.com/blobby/go/a1fcfcf6-ebb3-42af-900f-bac6da508cb5/downloads/9dd85999-425a-4546-adad-62ca92194f00/jd-call-2.mp3?ver=1751047203736"
-  }
+    mediaUrl: "https://img1.wsimg.com/blobby/go/a1fcfcf6-ebb3-42af-900f-bac6da508cb5/downloads/9dd85999-425a-4546-adad-62ca92194f00/jd-call-2.mp3?ver=1751047203736",
+    summary: "A call asking players not to forget their duty, and asking how a desk ended up blocking the door.",
+  },
 ];
 
 export default templates;
