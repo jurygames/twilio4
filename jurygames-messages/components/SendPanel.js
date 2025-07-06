@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import templatesData from '../data/templates.js';
 
-export default function SendPanel({ groups }) {
+export default function SendPanel({ groups, onLog }) {
   const [selectedGroupIndex, setSelectedGroupIndex] = useState(0);
   const [selectedShow, setSelectedShow] = useState('');
   const [showOptions, setShowOptions] = useState([]);
@@ -37,14 +37,17 @@ export default function SendPanel({ groups }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Send failed');
       setStatus('Sent successfully');
+      // Log without storing phone numbers
+      onLog({ time: new Date(), type: template.type, template: template.name, count: group.list.length });
     } catch (err) {
       setStatus(`Error: ${err.message}`);
+      onLog({ time: new Date(), type: 'Error', message: err.message });
     }
   };
 
   return (
     <div className="mb-4">
-      <h2 className="text-xl font-semibold mb-2">Send Message or Call</h2>
+      <h2 className="text-xl font-semibold mb-2">📤📲 Send Message or Call</h2>
 
       <label className="block text-sm mb-1">Select Group</label>
       <select
@@ -53,9 +56,7 @@ export default function SendPanel({ groups }) {
         onChange={e => setSelectedGroupIndex(Number(e.target.value))}
       >
         {groups.map((g, i) => (
-          <option key={i} value={i}>
-            {g.name} ({g.list.length})
-          </option>
+          <option key={i} value={i}>{g.name} ({g.list.length})</option>
         ))}
       </select>
 
@@ -65,9 +66,7 @@ export default function SendPanel({ groups }) {
         value={selectedShow}
         onChange={e => setSelectedShow(e.target.value)}
       >
-        {showOptions.map((show, idx) => (
-          <option key={idx} value={show}>{show}</option>
-        ))}
+        {showOptions.map((s, idx) => <option key={idx} value={s}>{s}</option>)}
       </select>
 
       <label className="block text-sm mb-1">Select Template</label>
@@ -77,20 +76,15 @@ export default function SendPanel({ groups }) {
         onChange={e => setSelectedTemplateIndex(Number(e.target.value))}
       >
         {filteredTemplates.map((t, i) => (
-          <option key={i} value={i}>
-            {t.name} ({t.type})
-          </option>
+          <option key={i} value={i}>{t.name} ({t.type})</option>
         ))}
       </select>
 
-      <button
-        className="bg-green-500 px-4 py-2 rounded"
-        onClick={send}
-      >
+      <button className="bg-green-500 px-4 py-2 rounded" onClick={send}>
         Send
       </button>
 
       <p className="mt-2 text-gray-300">{status}</p>
     </div>
-  );
+);
 }
