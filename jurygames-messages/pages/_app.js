@@ -14,7 +14,7 @@ function MyApp({ Component, pageProps }) {
   const handleLogin = (e) => {
     e.preventDefault();
     const password = e.target.password.value;
-    if (password === 'HangHim2025') {
+    if (password === 'CabinFever123') {
       localStorage.setItem('authenticated', 'true');
       setAuthenticated(true);
     } else {
