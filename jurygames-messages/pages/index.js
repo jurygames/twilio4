@@ -15,9 +15,10 @@ export default function Home() {
         <title>Calls & Texts | Jury Games</title>
       </Head>
       <div className="dark bg-gray-900 text-white min-h-screen">
-        <header className="bg-blue-400 py-6 flex items-center justify-center space-x-4">
-          <img src="/logo.png" alt="Jury Games Logo" className="h-8 filter invert" />
-          <h1 className="text-3xl font-bold text-white">Jury Games Messaging App</h1>
+        <header className="bg-[#333F50] py-6 flex items-center justify-center">
+          <h1 style={{ fontFamily: "'Roboto Condensed', sans-serif", fontWeight: 700 }} className="text-3xl uppercase text-white">
+            JURY GAMES
+          </h1>
         </header>
         <main className="p-6 grid md:grid-cols-2 gap-6">
           <div>

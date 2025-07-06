@@ -7,8 +7,8 @@ export default function StatusPanel({ logs }) {
         {logs.length === 0 && <li>No actions yet.</li>}
         {logs.map((log, i) => (
           <li key={i}>
-            {log.time.toLocaleTimeString()} – {log.type}
-            {log.template ? `: "${log.template}" (${log.count})` : log.message}
+            {new Date(log.time).toLocaleTimeString()} – {log.type}
+            {log.template ? `: "${log.template}" (${log.count}) successfully sent` : log.message}
           </li>
         ))}
       </ul>

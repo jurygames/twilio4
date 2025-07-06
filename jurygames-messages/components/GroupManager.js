@@ -6,20 +6,17 @@ export default function GroupManager({ onGroupsChange }) {
   const [name, setName] = useState('');
   const [numbers, setNumbers] = useState('');
 
-  // Load from localStorage on mount
   useEffect(() => {
     const saved = JSON.parse(localStorage.getItem('groups') || '[]');
     setGroups(saved);
     onGroupsChange?.(saved);
   }, []);
 
-  // Persist to localStorage on every groups change
   useEffect(() => {
     localStorage.setItem('groups', JSON.stringify(groups));
   }, [groups]);
 
   const saveGroup = () => {
-    // Split by newline or comma, then strip spaces
     const list = numbers
       .split(/\r?\n|,/)
       .map(n => n.replace(/\s+/g, '').trim())
@@ -70,7 +67,7 @@ export default function GroupManager({ onGroupsChange }) {
       <ul className="mt-2">
         {groups.map((g, i) => (
           <li key={i} className="flex justify-between">
-            <span>{g.name} ({g.list.length})</span>
+            <span>{g.name} ({g.list.length} {g.list.length === 1 ? 'number' : 'numbers'})</span>
             <button className="text-red-500" onClick={() => deleteGroup(i)}>Delete</button>
           </li>
         ))}
