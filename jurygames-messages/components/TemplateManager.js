@@ -19,7 +19,7 @@ export default function TemplateManager() {
     fetchTemplates();
   }, []);
 
-  // Local update only
+  // Local update
   const updateLocal = (idx, field, value) => {
     setTemplates(prev => {
       const updated = [...prev];
@@ -43,8 +43,12 @@ export default function TemplateManager() {
     }
   };
 
+  // Delete with confirmation
   const deleteTemplate = async (idx) => {
     const tpl = templates[idx];
+    if (!confirm('Are you sure you want to PERMANENTLY delete this template?')) {
+      return;
+    }
     await fetch(`/api/templates/${tpl.id}`, { method: 'DELETE' });
     setTemplates(prev => prev.filter((_, i) => i !== idx));
   };
@@ -164,7 +168,7 @@ export default function TemplateManager() {
         </button>
       </div>
 
-      <div className="mt-6 flex items-center">
+      <div className="mt-6 flex items-  center">
         <input
           className="p-2 bg-gray-800 rounded mr-2"
           placeholder="New Show Name"
