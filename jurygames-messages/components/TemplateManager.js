@@ -43,7 +43,6 @@ export default function TemplateManager() {
       body: JSON.stringify(fields),
     });
     if (res.ok) {
-      // refresh to persist changes
       await fetchTemplates();
     } else {
       const err = await res.json();
@@ -91,14 +90,6 @@ export default function TemplateManager() {
     }
   };
 
-  const addShow = () => {
-    if (newShow && !shows.includes(newShow)) {
-      setShows(prev => [...prev, newShow]);
-      setFilterShow(newShow);
-      setNewShow('');
-    }
-  };
-
   const visible = templates
     .map((tpl, idx) => ({ tpl, idx }))
     .filter(({ tpl }) => tpl.show === filterShow);
@@ -120,8 +111,21 @@ export default function TemplateManager() {
         </select>
       </div>
 
+      {/* Add Template button at top */}
+      <div className="mb-4">
+        <button
+          className="bg-green-500 px-4 py-2 rounded"
+          onClick={addTemplate}
+          disabled={!filterShow}
+        >
+          Add Template for "{filterShow}"
+        </button>
+      </div>
+
       {visible.map(({ tpl, idx }) => (
         <div key={idx} className="mb-4 p-4 bg-gray-800 rounded">
+          {/* Show label */}
+          <div className="text-sm text-gray-400 mb-1">Show: {tpl.show}</div>
           <input
             className="w-full p-2 bg-gray-900 rounded mb-2"
             value={tpl.name}
@@ -201,31 +205,6 @@ export default function TemplateManager() {
           </div>
         </div>
       ))}
-
-      <div className="mt-4">
-        <button
-          className="bg-green-500 px-4 py-2 rounded"
-          onClick={addTemplate}
-          disabled={!filterShow}
-        >
-          Add Template
-        </button>
-      </div>
-
-      <div className="mt-6 flex items-center">
-        <input
-          className="p-2 bg-gray-800 rounded mr-2"
-          placeholder="New Show Name"
-          value={newShow}
-          onChange={e => setNewShow(e.target.value)}
-        />
-        <button
-          className="bg-blue-500 px-3 py-1 rounded"
-          onClick={addShow}
-        >
-          Add Show
-        </button>
-      </div>
     </div>
-  ); 
+  );
 }
