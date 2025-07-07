@@ -1,30 +1,41 @@
 // components/SendPanel.js
 import { useState, useEffect } from 'react';
-import templatesData from '../data/templates.js';
 
 export default function SendPanel({ groups, onLog }) {
-  const [selectedGroupIndex, setSelectedGroupIndex] = useState(0);
-  const [selectedShow, setSelectedShow] = useState('Harry Briggs');
+  const [templates, setTemplates] = useState([]);
   const [showOptions, setShowOptions] = useState([]);
-  const [filteredTemplates, setFilteredTemplates] = useState([]);
+  const [selectedGroupIndex, setSelectedGroupIndex] = useState(0);
+  const [selectedShow, setSelectedShow] = useState('');
   const [selectedTemplateIndex, setSelectedTemplateIndex] = useState(0);
   const [status, setStatus] = useState('');
-
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingData, setPendingData] = useState({ group: null, template: null });
 
-  useEffect(() => {
-    const shows = Array.from(new Set(templatesData.map(t => t.show)));
+  // Fetch templates from API
+  const fetchTemplates = async () => {
+    const res = await fetch('/api/templates');
+    if (!res.ok) {
+      console.error('Failed to fetch templates');
+      return;
+    }
+    const data = await res.json();
+    setTemplates(data);
+    const shows = Array.from(new Set(data.map(t => t.show)));
     setShowOptions(shows);
-    setSelectedShow(shows.includes('Harry Briggs') ? 'Harry Briggs' : (shows[0] || ''));
+    // Initialize selectedShow on first load
+    if (!selectedShow) {
+      setSelectedShow(shows.includes('Harry Briggs') ? 'Harry Briggs' : shows[0] || '');
+    }
+  };
+
+  useEffect(() => {
+    fetchTemplates();
   }, []);
 
-  useEffect(() => {
-    const list = templatesData.filter(t => t.show === selectedShow);
-    setFilteredTemplates(list);
-    setSelectedTemplateIndex(0);
-  }, [selectedShow]);
+  // Update filtered templates when show changes
+  const filteredTemplates = templates.filter(t => t.show === selectedShow);
 
+  // Open confirmation modal
   const openConfirm = () => {
     const group = groups[selectedGroupIndex];
     const template = filteredTemplates[selectedTemplateIndex];
@@ -32,6 +43,7 @@ export default function SendPanel({ groups, onLog }) {
     setConfirmOpen(true);
   };
 
+  // Send after confirmation
   const confirmSend = async () => {
     setConfirmOpen(false);
     setStatus('Sending...');
@@ -82,7 +94,10 @@ export default function SendPanel({ groups, onLog }) {
       <select
         className="w-full mb-2 p-2 bg-gray-800 rounded"
         value={selectedShow}
-        onChange={e => setSelectedShow(e.target.value)}
+        onChange={e => {
+          setSelectedShow(e.target.value);
+          setSelectedTemplateIndex(0);
+        }}
       >
         {showOptions.map((s, idx) => (
           <option key={idx} value={s}>
@@ -138,5 +153,5 @@ export default function SendPanel({ groups, onLog }) {
         </div>
       )}
     </div>
-  );
+);
 }
