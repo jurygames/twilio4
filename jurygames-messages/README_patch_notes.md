@@ -34,3 +34,9 @@
 - The API now accepts **`mediaUrl`**, **`mp3Url`**, **`media_url`**, or **`url`** on call templates.
 - If none are present, you'll get `Call template missing mediaUrl`.
 - Use **/api/voice/test-play?to=+E164&url=...** to test the file directly.
+
+
+## Health ping
+- Added **/api/health** endpoint which lightly queries Supabase.
+- Added **vercel.json** with a weekly cron schedule: Monday 09:00 UTC.
+- Vercel will automatically call this endpoint once a week to keep Supabase from idling.
