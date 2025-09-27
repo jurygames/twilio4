@@ -34,41 +34,54 @@ export default function TemplateManager() {
     });
   };
 
-  const saveTemplate = async (index) => {
-    const tpl = templates[index];
-    const typeNorm = String(tpl.type || '').toLowerCase();
-    const needsFrom = (typeNorm === 'sms' || typeNorm === 'call');
+  
+const saveTemplate = async (index) => {
+  const tpl = templates[index];
+  const typeNorm = String(tpl.type || '').toLowerCase();
+  const needsFrom = (typeNorm === 'sms' || typeNorm === 'call');
 
-    // Resolve 'from' across common keys (UI might show 'from' but data may live elsewhere)
-    const fromCandidate = tpl.from ?? tpl.from_number ?? tpl.fromNumber ?? tpl.sender ?? '';
-    const fromTrim = String(fromCandidate || '').trim();
+  // Resolve sender across common keys and trim
+  const fromCandidate = tpl.from ?? tpl.from_number ?? tpl.fromNumber ?? tpl.sender ?? '';
+  const fromTrim = String(fromCandidate || '').trim();
 
-    if (needsFrom && !fromTrim) {
-      alert("'from' number is required for " + (typeNorm.toUpperCase()) + " templates (E.164 like +447...)");
-      return;
-    }
+  if (needsFrom && !fromTrim) {
+    alert("'from' number is required for " + (typeNorm.toUpperCase()) + " templates (E.164 like +447...)");
+    return;
+  }
 
-    // Prepare fields to save with canonical keys
-    const { id, ...fields } = tpl;
-    if (fromTrim) fields.from = fromTrim; // canonicalize to 'from'
-    if (!fields.mediaUrl && (tpl.mp3Url || tpl.media_url || tpl.url)) {
-      fields.mediaUrl = tpl.mp3Url || tpl.media_url || tpl.url;
-    }
-    // Normalize type to canonical lower-case value for consistency
-    if (typeNorm) fields.type = typeNorm;
-    const { id, ...fields } = tpl;
-    const res = await fetch(`/api/templates/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(fields),
-    });
-    if (res.ok) {
-      await fetchTemplates();
-    } else {
-      const err = await res.json();
-      alert('Save failed: ' + err.error);
-    }
-  };
+  // Prepare canonicalized payload
+  const id = tpl.id;
+  const fields = { ...tpl };
+
+  // Canonicalize 'from'
+  if (fromTrim) fields.from = fromTrim;
+
+  // Canonicalize media URL field for calls
+  if (!fields.mediaUrl && (tpl.mp3Url || tpl.media_url || tpl.url)) {
+    fields.mediaUrl = tpl.mp3Url || tpl.media_url || tpl.url;
+  }
+
+  // Normalize type
+  if (typeNorm) fields.type = typeNorm;
+
+  // Remove extras we don't want to store twice
+  delete fields.from_number;
+  delete fields.fromNumber;
+  delete fields.sender;
+
+  const res = await fetch(`/api/templates/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (res.ok) {
+    await fetchTemplates();
+  } else {
+    const err = await res.json().catch(() => ({}));
+    alert('Save failed: ' + (err.error || res.statusText));
+  }
+};
+
 
   const revertTemplate = (index) => {
     const original = originalTemplates[index];
