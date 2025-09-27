@@ -15,3 +15,9 @@
 - `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN`
 
 (Per-template `from` numbers are stored in the **templates table** now.)
+
+
+## Voice-specific update
+- Added **lib/resolveVoiceFrom.js** to ensure the `from` used for calls is **voice-capable** on your account. If the template's `from` isn't voice-capable (common with some UK mobile numbers), it will fall back to `TWILIO_VOICE_FALLBACK_FROM`.
+- Set `TWILIO_VOICE_FALLBACK_FROM` in Vercel to any **owned, voice-capable** number (E.164). You can verify via `/api/debug/twilio-numbers`.
+

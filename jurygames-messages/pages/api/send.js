@@ -1,5 +1,6 @@
 // pages/api/send.js
 import { sendSMS, sendWhatsApp, makeCall } from '../../lib/twilioClient';
+import { resolveVoiceFrom } from '../../lib/resolveVoiceFrom';
 
 function e164(n) {
   if (!n) return '';
@@ -21,6 +22,7 @@ export default async function handler(req, res) {
     const fromRaw = template.from ?? template.from_number ?? template.fromNumber ?? template.sender ?? null;
     let successCount = 0;
     const errors = [];
+    const successes = [];
 
     // Pre-validate sender
     const fromE164 = e164(fromRaw);
@@ -37,12 +39,16 @@ export default async function handler(req, res) {
         }
         try {
           if (type === 'SMS') {
-            await sendSMS(to, fromE164, content);
+            const r = await sendSMS(to, fromE164, content);
+            successes.push({ to, sid: r.sid });
           } else if (type === 'WhatsApp') {
-            await sendWhatsApp(to, fromE164, content);
+            const r = await sendWhatsApp(to, fromE164, content);
+            successes.push({ to, sid: r.sid });
           } else if (type === 'Call') {
             if (!mediaUrl) throw new Error('Call template missing mediaUrl');
-            await makeCall(to, fromE164, mediaUrl);
+            const statusCallback = `${process.env.PUBLIC_BASE_URL || ''}/api/voice/status` || undefined;
+            const r = await makeCall(to, fromE164, mediaUrl, statusCallback);
+            successes.push({ to, sid: r.sid });
           } else {
             throw new Error(`Unsupported message type: ${type}`);
           }
@@ -55,6 +61,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       message: `${successCount} ${type}${successCount !== 1 ? 's' : ''} sent`,
+      successes,
       errors,
     });
   } catch (err) {

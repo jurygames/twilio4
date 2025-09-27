@@ -11,7 +11,10 @@ export const sendWhatsApp = (to, from, body) => {
   return client.messages.create({ to: 'whatsapp:' + to, from: 'whatsapp:' + from, body });
 };
 
-export const makeCall = async (to, from, mediaUrl) => {
+export const makeCall = async (to, from, mediaUrl, statusCallback) => {
   const twiml = `<Response><Play>${mediaUrl}</Play></Response>`;
-  return client.calls.create({ to, from, twiml });
+  const payload = { to, from, twiml };
+  if (statusCallback) payload.statusCallback = statusCallback;
+  if (statusCallback) payload.statusCallbackEvent = ['initiated','ringing','answered','completed'];
+  return client.calls.create(payload);
 };
