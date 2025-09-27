@@ -56,7 +56,11 @@ export default function SendPanel({ groups, onLog }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Send failed');
-      setStatus('Sent successfully');
+      const okCount = (data.successes || []).length;
+      const errCount = (data.errors || []).length;
+      setStatus(`Sent: ${okCount} success, ${errCount} error${errCount===1?'':'s'}`);
+      if (data.errors && data.errors.length) { console.warn('Errors:', data.errors); }
+      if (data.successes && data.successes.length) { console.log('Successes:', data.successes); }
       onLog({
         time: new Date(),
         type: template.type,

@@ -21,3 +21,10 @@
 - Added **lib/resolveVoiceFrom.js** to ensure the `from` used for calls is **voice-capable** on your account. If the template's `from` isn't voice-capable (common with some UK mobile numbers), it will fall back to `TWILIO_VOICE_FALLBACK_FROM`.
 - Set `TWILIO_VOICE_FALLBACK_FROM` in Vercel to any **owned, voice-capable** number (E.164). You can verify via `/api/debug/twilio-numbers`.
 
+
+
+## Voice diagnostics
+- **/api/voice/test-say?to=+E164** → places a call that uses `<Say>` (no external media). If this works, Twilio voice + number + geo perms are good.
+- **/api/voice/test-play?to=+E164&url=...** → same as production path but with your own media URL. If test-say works but test-play fails, it's a **media URL** issue.
+- All tests log to `/api/voice/status` → check Vercel function logs.
+

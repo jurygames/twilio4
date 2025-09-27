@@ -18,7 +18,8 @@ export default async function handler(req, res) {
     if (!group || !Array.isArray(group.list) || !template) {
       return res.status(400).json({ message: 'Invalid request body' });
     }
-    const { type, content, mediaUrl } = template;
+    let { type, content, mediaUrl } = template;
+    const typeNorm = String(type || '').trim().toLowerCase();
     const fromRaw = template.from ?? template.from_number ?? template.fromNumber ?? template.sender ?? null;
     let successCount = 0;
     const errors = [];
@@ -38,13 +39,13 @@ export default async function handler(req, res) {
           return;
         }
         try {
-          if (type === 'SMS') {
+          if (typeNorm === 'sms') {
             const r = await sendSMS(to, fromE164, content);
             successes.push({ to, sid: r.sid });
-          } else if (type === 'WhatsApp') {
+          } else if (typeNorm === 'whatsapp') {
             const r = await sendWhatsApp(to, fromE164, content);
             successes.push({ to, sid: r.sid });
-          } else if (type === 'Call') {
+          } else if (typeNorm === 'call') {
             if (!mediaUrl) throw new Error('Call template missing mediaUrl');
             const statusCallback = `${process.env.PUBLIC_BASE_URL || ''}/api/voice/status` || undefined;
             const r = await makeCall(to, fromE164, mediaUrl, statusCallback);
@@ -60,7 +61,7 @@ export default async function handler(req, res) {
     );
 
     return res.status(200).json({
-      message: `${successCount} ${type}${successCount !== 1 ? 's' : ''} sent`,
+      message: `${successCount} ${type || typeNorm}${successCount !== 1 ? 's' : ''} sent`,
       successes,
       errors,
     });
