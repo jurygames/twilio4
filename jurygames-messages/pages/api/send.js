@@ -18,7 +18,8 @@ export default async function handler(req, res) {
     if (!group || !Array.isArray(group.list) || !template) {
       return res.status(400).json({ message: 'Invalid request body' });
     }
-    let { type, content, mediaUrl } = template;
+    let { type, content } = template;
+    const mediaUrl = template.mediaUrl ?? template.mp3Url ?? template.media_url ?? template.url ?? null;
     const typeNorm = String(type || '').trim().toLowerCase();
     const fromRaw = template.from ?? template.from_number ?? template.fromNumber ?? template.sender ?? null;
     let successCount = 0;

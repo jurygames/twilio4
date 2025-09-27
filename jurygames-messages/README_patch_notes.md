@@ -28,3 +28,9 @@
 - **/api/voice/test-play?to=+E164&url=...** → same as production path but with your own media URL. If test-say works but test-play fails, it's a **media URL** issue.
 - All tests log to `/api/voice/status` → check Vercel function logs.
 
+
+
+## Call media URL
+- The API now accepts **`mediaUrl`**, **`mp3Url`**, **`media_url`**, or **`url`** on call templates.
+- If none are present, you'll get `Call template missing mediaUrl`.
+- Use **/api/voice/test-play?to=+E164&url=...** to test the file directly.
