@@ -36,6 +36,11 @@ export default function TemplateManager() {
 
   const saveTemplate = async (index) => {
     const tpl = templates[index];
+    if ((tpl.type === 'SMS' || tpl.type === 'Call') && (!tpl.from || String(tpl.from).trim() === '')) {
+      alert("'from' number is required for " + tpl.type + " templates (E.164 like +447...)");
+      return;
+    }
+    const tpl = templates[index];
     const { id, ...fields } = tpl;
     const res = await fetch(`/api/templates/${id}`, {
       method: 'PATCH',
