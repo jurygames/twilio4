@@ -36,8 +36,10 @@ export default function TemplateManager() {
 
   const saveTemplate = async (index) => {
     const tpl = templates[index];
-    if ((tpl.type === 'SMS' || tpl.type === 'Call') && (!tpl.from || String(tpl.from).trim() === '')) {
-      alert("'from' number is required for " + tpl.type + " templates (E.164 like +447...)");
+    const typeNorm = String(tpl.type || '').toLowerCase();
+    const needsFrom = (typeNorm === 'sms' || typeNorm === 'call');
+    if (needsFrom && (!tpl.from || String(tpl.from).trim() === '')) {
+      alert("'from' number is required for " + (typeNorm.toUpperCase()) + " templates (E.164 like +447...)");
       return;
     }
     const { id, ...fields } = tpl;

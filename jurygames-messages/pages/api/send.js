@@ -1,6 +1,5 @@
 // pages/api/send.js
 import { sendSMS, sendWhatsApp, makeCall } from '../../lib/twilioClient';
-import { resolveVoiceFrom } from '../../lib/resolveVoiceFrom';
 
 function e164(n) {
   if (!n) return '';
@@ -18,17 +17,21 @@ export default async function handler(req, res) {
     if (!group || !Array.isArray(group.list) || !template) {
       return res.status(400).json({ message: 'Invalid request body' });
     }
+
+    // Normalized routing type and media URL keys
     let { type, content } = template;
+    const typeNorm = String(type || '').toLowerCase();
     const mediaUrl = template.mediaUrl ?? template.mp3Url ?? template.media_url ?? template.url ?? null;
-    const typeNorm = String(type || '').trim().toLowerCase();
-    const fromRaw = template.from ?? template.from_number ?? template.fromNumber ?? template.sender ?? null;
+
     let successCount = 0;
     const errors = [];
     const successes = [];
 
-    // Pre-validate sender
+    // Resolve 'from' across common keys, but require it to exist
+    const fromRaw = template.from ?? template.from_number ?? template.fromNumber ?? template.sender ?? null;
     const fromE164 = e164(fromRaw);
-    if (!fromE164) { console.error('Missing from in template', { keys: Object.keys(template || {}), templateFrom: template?.from, fromRaw });
+    if (!fromE164) {
+      console.error('Missing from in template', { keys: Object.keys(template || {}), templateFrom: template?.from, fromRaw });
       return res.status(400).json({ message: `Template '${template.name || 'unknown'}' is missing a valid 'from' number` });
     }
 
