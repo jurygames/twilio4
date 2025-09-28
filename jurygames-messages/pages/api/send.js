@@ -1,6 +1,13 @@
 // pages/api/send.js
 import { sendSMS, sendWhatsApp, makeCall } from '../../lib/twilioClient';
 
+function e164(n) {
+  if (!n) return '';
+  const trimmed = String(n).trim();
+  if (!trimmed) return '';
+  return trimmed.startsWith('+') ? trimmed : '+' + trimmed.replace(/\D/g, '');
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ message: 'Method Not Allowed' });
@@ -10,22 +17,44 @@ export default async function handler(req, res) {
     if (!group || !Array.isArray(group.list) || !template) {
       return res.status(400).json({ message: 'Invalid request body' });
     }
-    const { type, from, content, mediaUrl } = template;
+
+    // Normalize type and media keys
+    let { type, content } = template;
+    const typeNorm = String(type || '').toLowerCase();
+    const mediaUrl = template.mediaUrl ?? template.mp3Url ?? template.media_url ?? template.url ?? null;
+
     let successCount = 0;
     const errors = [];
+    const successes = [];
 
-    // Process each destination number in parallel
+    // Resolve 'from' across common keys
+    const fromRaw = template.from ?? template.from_number ?? template.fromNumber ?? template.sender ?? null;
+    const fromE164 = e164(fromRaw);
+    if (!fromE164) {
+      return res.status(400).json({ message: `Template '${template.name || 'unknown'}' is missing a valid 'from' number` });
+    }
+
     console.log('SEND_DIAG', { type, typeNorm, fromRaw, fromE164, hasMedia: !!mediaUrl });
 
     await Promise.all(
-      group.list.map(async (to) => {
+      group.list.map(async (toRaw) => {
+        const to = e164(toRaw);
+        if (!to) {
+          errors.push({ to: toRaw, error: 'Invalid recipient number' });
+          return;
+        }
         try {
-          if (type === 'SMS') {
-            await sendSMS(to, from, content);
-          } else if (type === 'WhatsApp') {
-            await sendWhatsApp(to, from, content);
-          } else if (type === 'Call') {
-            await makeCall(to, from, mediaUrl);
+          if (typeNorm === 'sms') {
+            const r = await sendSMS(to, fromE164, content);
+            successes.push({ to, sid: r.sid });
+          } else if (typeNorm === 'whatsapp') {
+            const r = await sendWhatsApp(to, fromE164, content);
+            successes.push({ to, sid: r.sid });
+          } else if (typeNorm === 'call') {
+            if (!mediaUrl) throw new Error('Call template missing mediaUrl');
+            const statusCallback = `${process.env.PUBLIC_BASE_URL || ''}/api/voice/status` || undefined;
+            const r = await makeCall(to, fromE164, mediaUrl, statusCallback);
+            successes.push({ to, sid: r.sid });
           } else {
             throw new Error(`Unsupported message type: ${type}`);
           }
@@ -36,8 +65,10 @@ export default async function handler(req, res) {
       })
     );
 
-    return res.status(200).json({ diag: { route: typeNorm, from: fromE164, mediaUrlUsed: mediaUrl },
-      message: `${successCount} ${type}${successCount !== 1 ? 's' : ''} sent`,
+    return res.status(200).json({
+      diag: { route: typeNorm, from: fromE164, mediaUrlUsed: mediaUrl },
+      message: `${successCount} ${type || typeNorm}${successCount !== 1 ? 's' : ''} sent`,
+      successes,
       errors,
     });
   } catch (err) {
