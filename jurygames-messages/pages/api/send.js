@@ -15,6 +15,8 @@ export default async function handler(req, res) {
     const errors = [];
 
     // Process each destination number in parallel
+    console.log('SEND_DIAG', { type, typeNorm, fromRaw, fromE164, hasMedia: !!mediaUrl });
+
     await Promise.all(
       group.list.map(async (to) => {
         try {
@@ -34,7 +36,7 @@ export default async function handler(req, res) {
       })
     );
 
-    return res.status(200).json({
+    return res.status(200).json({ diag: { route: typeNorm, from: fromE164, mediaUrlUsed: mediaUrl },
       message: `${successCount} ${type}${successCount !== 1 ? 's' : ''} sent`,
       errors,
     });
