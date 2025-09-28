@@ -34,54 +34,21 @@ export default function TemplateManager() {
     });
   };
 
-  
-const saveTemplate = async (index) => {
-  const tpl = templates[index];
-  const typeNorm = String(tpl.type || '').toLowerCase();
-  const needsFrom = (typeNorm === 'sms' || typeNorm === 'call');
-
-  // Resolve sender across common keys and trim
-  const fromCandidate = tpl.from ?? tpl.from_number ?? tpl.fromNumber ?? tpl.sender ?? '';
-  const fromTrim = String(fromCandidate || '').trim();
-
-  if (needsFrom && !fromTrim) {
-    alert("'from' number is required for " + (typeNorm.toUpperCase()) + " templates (E.164 like +447...)");
-    return;
-  }
-
-  // Prepare canonicalized payload
-  const id = tpl.id;
-  const fields = { ...tpl };
-
-  // Canonicalize 'from'
-  if (fromTrim) fields.from = fromTrim;
-
-  // Canonicalize media URL field for calls
-  if (!fields.mediaUrl && (tpl.mp3Url || tpl.media_url || tpl.url)) {
-    fields.mediaUrl = tpl.mp3Url || tpl.media_url || tpl.url;
-  }
-
-  // Normalize type
-  if (typeNorm) fields.type = typeNorm;
-
-  // Remove extras we don't want to store twice
-  delete fields.from_number;
-  delete fields.fromNumber;
-  delete fields.sender;
-
-  const res = await fetch(`/api/templates/${id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(fields),
-  });
-  if (res.ok) {
-    await fetchTemplates();
-  } else {
-    const err = await res.json().catch(() => ({}));
-    alert('Save failed: ' + (err.error || res.statusText));
-  }
-};
-
+  const saveTemplate = async (index) => {
+    const tpl = templates[index];
+    const { id, ...fields } = tpl;
+    const res = await fetch(`/api/templates/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fields),
+    });
+    if (res.ok) {
+      await fetchTemplates();
+    } else {
+      const err = await res.json();
+      alert('Save failed: ' + err.error);
+    }
+  };
 
   const revertTemplate = (index) => {
     const original = originalTemplates[index];
