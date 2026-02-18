@@ -1,5 +1,6 @@
 // lib/resolveVoiceFrom.js
 import Twilio from 'twilio';
+import { normalizePhone } from './normalizePhone';
 
 /**
  * Ensure the provided 'from' number is voice-capable on this Twilio account.
@@ -9,13 +10,12 @@ import Twilio from 'twilio';
 export async function resolveVoiceFrom(preferredFrom) {
   const client = Twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
   const numbers = await client.incomingPhoneNumbers.list({ limit: 100 });
-  const normalize = (n) => (n?.startsWith('+') ? n : (n ? '+' + String(n).replace(/\D/g, '') : ''));
-  const want = normalize(preferredFrom);
+  const want = normalizePhone(preferredFrom);
   const found = numbers.find(n => n.phoneNumber === want);
   if (found && found.capabilities && found.capabilities.voice) {
     return want;
   }
-  const fallback = normalize(process.env.TWILIO_VOICE_FALLBACK_FROM);
+  const fallback = normalizePhone(process.env.TWILIO_VOICE_FALLBACK_FROM);
   if (!fallback) {
     throw new Error(`Preferred voice 'from' ${want || '(empty)'} is not voice-capable and no TWILIO_VOICE_FALLBACK_FROM is set`);
   }
@@ -30,8 +30,7 @@ export async function resolveVoiceFrom(preferredFrom) {
 export async function resolveAnyVoiceFrom(preferred) {
   const client = Twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
   const numbers = await client.incomingPhoneNumbers.list({ limit: 100 });
-  const normalize = (n) => (n?.startsWith('+') ? n : (n ? '+' + String(n).replace(/\D/g, '') : ''));
-  const pref = normalize(preferred) || normalize(process.env.TWILIO_VOICE_FALLBACK_FROM);
+  const pref = normalizePhone(preferred) || normalizePhone(process.env.TWILIO_VOICE_FALLBACK_FROM);
   if (pref) {
     const found = numbers.find(n => n.phoneNumber === pref && n.capabilities?.voice);
     if (found) return pref;

@@ -1,12 +1,6 @@
 // pages/api/send.js
 import { sendSMS, sendWhatsApp, makeCall } from '../../lib/twilioClient';
-
-function e164(n) {
-  if (!n) return '';
-  const trimmed = String(n).trim();
-  if (!trimmed) return '';
-  return trimmed.startsWith('+') ? trimmed : '+' + trimmed.replace(/\D/g, '');
-}
+import { normalizePhone } from '../../lib/normalizePhone';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -29,16 +23,18 @@ export default async function handler(req, res) {
 
     // Resolve 'from' across common keys
     const fromRaw = template.from ?? template.from_number ?? template.fromNumber ?? template.sender ?? null;
-    const fromE164 = e164(fromRaw);
+    const fromE164 = normalizePhone(fromRaw);
     if (!fromE164) {
       return res.status(400).json({ message: `Template '${template.name || 'unknown'}' is missing a valid 'from' number` });
     }
 
     console.log('SEND_DIAG', { type, typeNorm, fromRaw, fromE164, hasMedia: !!mediaUrl });
 
+    const defaultCountryCode = group.countryCode;
+
     await Promise.all(
       group.list.map(async (toRaw) => {
-        const to = e164(toRaw);
+        const to = normalizePhone(toRaw, { defaultCountryCode });
         if (!to) {
           errors.push({ to: toRaw, error: 'Invalid recipient number' });
           return;
