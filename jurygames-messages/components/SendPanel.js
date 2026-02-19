@@ -55,13 +55,27 @@ export default function SendPanel({ groups, onLog }) {
         body: JSON.stringify({ group, template }),
       });
       const data = await res.json();
+      const successCount = Array.isArray(data.successes) ? data.successes.length : 0;
+      const errorCount = Array.isArray(data.errors) ? data.errors.length : 0;
       if (!res.ok) throw new Error(data.message || 'Send failed');
-      setStatus('Sent successfully');
+
+      if (errorCount > 0) {
+        setStatus(`Partially sent: ${successCount} succeeded, ${errorCount} failed`);
+        onLog({
+          time: new Date(),
+          type: 'Warning',
+          message: `${template.type} "${template.name}" to ${group.name}: ${successCount} succeeded, ${errorCount} failed.`,
+        });
+        return;
+      }
+
+      setStatus(`Sent successfully (${successCount})`);
       onLog({
         time: new Date(),
         type: template.type,
         template: template.name,
         groupName: group.name,
+        message: `${template.type} "${template.name}" sent to ${group.name} (${successCount} recipient${successCount === 1 ? '' : 's'}).`,
       });
     } catch (err) {
       setStatus('Error: ' + err.message);

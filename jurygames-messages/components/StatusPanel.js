@@ -14,16 +14,23 @@ export default function StatusPanel({ logs }) {
           const time = log.time instanceof Date
             ? log.time.toLocaleTimeString('en-GB', { hour12: false })
             : new Date(log.time).toLocaleTimeString('en-GB', { hour12: false });
+          if (log.message) {
+            return (
+              <li key={i}>
+                {date} {time} - {log.type}: {log.message}
+              </li>
+            );
+          }
           if (log.type === 'Error') {
             return (
               <li key={i}>
-                {date} {time} – Error: {log.message}
+                {date} {time} - Error: {log.message}
               </li>
             );
           }
           return (
             <li key={i}>
-              {date} {time} – {log.type}: "{log.template}" successfully sent to {log.groupName}
+              {date} {time} - {log.type}: "{log.template}" successfully sent to {log.groupName}
             </li>
           );
         })}
