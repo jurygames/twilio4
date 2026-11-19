@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
 
-export default function SendPanel({ groups, canSend, onLog }) {
+function londonDateTime(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return 'Time needs review';
+  return new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', dateStyle: 'medium', timeStyle: 'short' }).format(date);
+}
+
+export default function SendPanel({ groups, selectedGroupId, onSelectGroup, selectedShow, canSend, onLog }) {
   const [templates, setTemplates] = useState([]);
-  const [showOptions, setShowOptions] = useState([]);
-  const [selectedGroupIndex, setSelectedGroupIndex] = useState(0);
-  const [selectedShow, setSelectedShow] = useState('');
   const [selectedTemplateIndex, setSelectedTemplateIndex] = useState(0);
   const [status, setStatus] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -22,13 +25,32 @@ export default function SendPanel({ groups, canSend, onLog }) {
       return;
     }
     setTemplates(data.templates);
-    const shows = Array.from(new Set(data.templates.map(template => template.show)));
-    setShowOptions(shows);
-    if (!selectedShow) setSelectedShow(shows.includes('Harry Briggs') ? 'Harry Briggs' : shows[0] || '');
   };
 
   useEffect(() => { fetchTemplates(); }, []);
-  const filteredTemplates = templates.filter(template => template.show === selectedShow);
+  const selectedGroup = groups.find(group => group.id === selectedGroupId) || groups[0] || null;
+  const filteredTemplates = templates;
+
+  useEffect(() => {
+    if (!pendingData?.group) return;
+    const current = groups.find(group => group.id === pendingData.group.id);
+    if (!current || JSON.stringify(current) !== JSON.stringify(pendingData.group) ||
+        Date.parse(current.expiresAtIso || '') <= Date.now()) {
+      setConfirmOpen(false);
+      setPendingData(null);
+      setConsentAcknowledged(false);
+      setStatus('The selected show or recipient list changed or expired. Review a fresh preview before approving.');
+    }
+  }, [groups, pendingData]);
+
+  const groupPayload = group => ({
+    name: group.name,
+    list: group.list,
+    kind: group.kind || 'custom',
+    scope: group.scope || (group.showId ? 'show' : 'standalone'),
+    ...(group.showId ? { showId: group.showId } : {}),
+    ...(group.expiresAtIso ? { expiresAtIso: group.expiresAtIso } : {})
+  });
 
   const closePreview = () => {
     if (sending || approvalBusy) return;
@@ -38,7 +60,7 @@ export default function SendPanel({ groups, canSend, onLog }) {
   };
 
   const openPreview = async () => {
-    const group = groups[selectedGroupIndex];
+    const group = selectedGroup;
     const selectedTemplate = filteredTemplates[selectedTemplateIndex];
     const requestId = globalThis.crypto?.randomUUID?.();
     if (!group || !selectedTemplate || !requestId) {
@@ -52,7 +74,7 @@ export default function SendPanel({ groups, canSend, onLog }) {
       const res = await fetch('/api/send-preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-jurygames-request': '1' },
-        body: JSON.stringify({ group: { name: group.name, list: group.list }, templateId: selectedTemplate.id, requestId }),
+        body: JSON.stringify({ group: groupPayload(group), templateId: selectedTemplate.id, requestId }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'preview_unavailable');
@@ -76,7 +98,7 @@ export default function SendPanel({ groups, canSend, onLog }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-jurygames-request': '1' },
         body: JSON.stringify({
-          group: { name: pendingData.group.name, list: pendingData.group.list },
+          group: groupPayload(pendingData.group),
           templateId: pendingData.template.id,
           requestId: pendingData.requestId,
           previewToken: pendingData.previewToken,
@@ -111,7 +133,7 @@ export default function SendPanel({ groups, canSend, onLog }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-jurygames-request': '1' },
         body: JSON.stringify({
-          group: { name: group.name, list: group.list },
+          group: groupPayload(group),
           templateId: template.id,
           requestId,
           approvalToken,
@@ -164,22 +186,18 @@ export default function SendPanel({ groups, canSend, onLog }) {
     <div className="mb-4">
       <h2 className="text-xl font-semibold mb-2">Send Message or Call</h2>
 
-      <label className="block text-sm mb-1">Select Group</label>
-      <select className="w-full mb-2 p-2 bg-gray-800 rounded" value={selectedGroupIndex} onChange={event => setSelectedGroupIndex(Number(event.target.value))}>
-        {groups.map((group, index) => <option key={index} value={index}>{group.name} ({group.list.length} {group.list.length === 1 ? 'number' : 'numbers'})</option>)}
+      <label className="block text-sm mb-1" htmlFor="send-group">Recipient group</label>
+      <select id="send-group" className="w-full mb-2 p-2 bg-gray-800 rounded" value={selectedGroup?.id || ''} onChange={event => onSelectGroup?.(event.target.value)} disabled={!groups.length}>
+        {!groups.length ? <option value="">Choose a show or create a custom list</option> : null}
+        {groups.map(group => <option key={group.id} value={group.id}>{group.name} ({group.list.length} {group.list.length === 1 ? 'number' : 'numbers'})</option>)}
       </select>
 
-      <label className="block text-sm mb-1">Select Template Category</label>
-      <select className="w-full mb-2 p-2 bg-gray-800 rounded" value={selectedShow} onChange={event => { setSelectedShow(event.target.value); setSelectedTemplateIndex(0); }}>
-        {showOptions.map((show, index) => <option key={index} value={show}>{show}</option>)}
+      <label className="block text-sm mb-1" htmlFor="send-template">Approved message/call template</label>
+      <select id="send-template" className="w-full mb-2 p-2 bg-gray-800 rounded" value={selectedTemplateIndex} onChange={event => setSelectedTemplateIndex(Number(event.target.value))} disabled={!filteredTemplates.length}>
+        {filteredTemplates.map((template, index) => <option key={template.id || index} value={index}>{template.name} · {template.type} · content category: {template.show}</option>)}
       </select>
 
-      <label className="block text-sm mb-1">Select Template</label>
-      <select className="w-full mb-2 p-2 bg-gray-800 rounded" value={selectedTemplateIndex} onChange={event => setSelectedTemplateIndex(Number(event.target.value))}>
-        {filteredTemplates.map((template, index) => <option key={index} value={index}>{template.name} ({template.type})</option>)}
-      </select>
-
-      <button className="bg-green-500 px-4 py-2 rounded disabled:opacity-50" onClick={openPreview} disabled={previewBusy || !groups.length || !filteredTemplates.length}>
+      <button className="bg-green-500 px-4 py-2 rounded disabled:opacity-50" onClick={openPreview} disabled={previewBusy || !selectedGroup || !filteredTemplates.length}>
         {previewBusy ? 'Loading preview...' : 'Review Send'}
       </button>
       <p className="mt-2 text-gray-300" role="status">{status}</p>
@@ -188,11 +206,20 @@ export default function SendPanel({ groups, canSend, onLog }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
           <div className="mx-4 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 text-gray-900 dark:bg-gray-800 dark:text-gray-100">
             <h3 className="mb-4 text-lg font-bold">Review Message Preview</h3>
-            <p className="mb-2">Template category: <strong>{pendingData.template.showCategory}</strong></p>
+            <p className="mb-2">Template content category: <strong>{pendingData.template.showCategory}</strong> <span className="text-xs text-gray-500">(not a show ID)</span></p>
             <p className="mb-2">Method: <strong>{methodLabel}</strong></p>
             <p className="mb-2">Template: <strong>{pendingData.template.name}</strong></p>
             <p className="mb-2">Sender: <strong>{pendingData.template.from}</strong></p>
-            <p className="mb-2">Manual group: <strong>{pendingData.group.name}</strong> · {uniqueRecipients.length} unique recipients</p>
+            {pendingData.group.showId ? (
+              <>
+                <p className="mb-2">Exact show: <strong>{pendingData.group.showName || selectedShow?.name || 'Selected performance'}</strong></p>
+                <p className="mb-2">Performance: <strong>{londonDateTime(pendingData.group.showStartsAt || selectedShow?.startsAt)}</strong> · {pendingData.group.deliveryType || selectedShow?.deliveryType || 'type needs review'} · {pendingData.group.bookingDistinction || selectedShow?.bookingDistinction || 'booking type needs review'}{(pendingData.group.showLocation || selectedShow?.location) ? ` · ${pendingData.group.showLocation || selectedShow?.location}` : ''}</p>
+                <p className="mb-2 break-all font-mono text-xs">Show ID: {pendingData.group.showId}</p>
+              </>
+            ) : <p className="mb-2">Standalone list; expiry: <strong>{new Date(pendingData.group.expiresAtIso).toLocaleString('en-GB', { timeZone: 'Europe/London' })}</strong> London time</p>}
+            <p className="mb-2">Recipient group: <strong>{pendingData.group.name}</strong> · {uniqueRecipients.length} unique recipients</p>
+            <p className="mb-2 text-xs text-gray-400">{pendingData.group.kind === 'automatic' ? 'Summons contact list' : 'Manual custom list'} · expires {pendingData.group.expiresAtIso ? new Date(pendingData.group.expiresAtIso).toLocaleString('en-GB', { timeZone: 'Europe/London' }) : 'not recorded'} London time</p>
+            <p className="mb-2 text-xs text-gray-400">Estimated cost: unavailable for this preview.</p>
             {pendingData.template.type === 'call' ? (
               <div className="mb-3">
                 <p className="mb-1 text-sm font-semibold">Approved call audio</p>

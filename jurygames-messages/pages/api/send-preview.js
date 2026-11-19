@@ -33,8 +33,8 @@ export default async function handler(req, res) {
 
     let resolvedFrom = checked.template.from;
     const warnings = [
-      'This manual group is not linked to a canonical Summons show in this phase.',
-      'Confirm the intended show, retention deadline, consent, and opt-out status for every recipient before approval.',
+      'Verify that this group matches the exact selected Summons performance and its current retention deadline.',
+      'Consent and opt-out evidence is not recorded here; every recipient requires a human eligibility review before approval.',
     ];
     let callbackReady = true;
     if (canSend() && checked.template.type === 'call') {

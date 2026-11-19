@@ -4,6 +4,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const Twilio = require('twilio');
 const security = require('../lib/security');
+const { normalizePhoneNumber, groupInternationalRecipients } = require('../lib/phoneNumbers');
+const { createCustomList } = require('../lib/customLists');
+const { SummonsMessagingApiError, getSummonsMessagingShows, getSummonsShowRecipients } = require('../lib/summonsMessagingApi');
 
 const sender = '+447700900123';
 
@@ -30,6 +33,116 @@ test('operator access comes from the current Summons Defendant qualification, no
   })), /messaging_auth_unavailable/);
   assert.equal(security.roleMeetsRequirement('operator', 'admin'), false);
   assert.equal(security.roleMeetsRequirement('admin', 'operator'), true);
+});
+
+test('international phone normalization requires explicit international context and flags unresolved countries', () => {
+  const uk = normalizePhoneNumber('+442070313000');
+  assert.equal(uk.status, 'valid');
+  assert.equal(uk.e164, '+442070313000');
+  assert.equal(uk.callingCode, '+44');
+  assert.equal(uk.countryName, 'United Kingdom');
+  assert.equal(Object.hasOwn(uk, 'original'), false, 'valid numbers need no stored correction copy');
+
+  const national = normalizePhoneNumber('020 7031 3000');
+  assert.equal(national.status, 'needs_review');
+  assert.equal(national.reason, 'invalid_number');
+  assert.equal(national.original, '020 7031 3000');
+
+  const nonGeographic = normalizePhoneNumber('+80012345678');
+  assert.equal(nonGeographic.status, 'needs_review');
+  assert.equal(nonGeographic.reason, 'country_unresolved');
+  assert.equal(nonGeographic.callingCode, '+800');
+});
+
+test('shared calling codes group by code without claiming a unique country; duplicates normalize to one E.164', () => {
+  const grouped = groupInternationalRecipients([
+    { number: '+1 202-555-0100', roles: ['lead_booker'], sources: ['calendar'], consentStatus: 'not_recorded' },
+    { number: '+12025550100', roles: ['attendee'], sources: ['contact_form'], consentStatus: 'not_recorded' },
+    { number: '+1 416 555 0100', roles: ['attendee'], sources: ['contact_form'], consentStatus: 'not_recorded' },
+    { number: '+442079460018', roles: ['booking_contact'], sources: ['legacy_sheet'], consentStatus: 'not_recorded' },
+    { number: '+80012345678', roles: ['booking_contact'], sources: ['legacy_sheet'], consentStatus: 'not_recorded' },
+    { number: '020 7031 3000', roles: ['booking_contact'], sources: ['legacy_sheet'], consentStatus: 'not_recorded' },
+    { number: '', roles: ['attendee'], sources: ['contact_form'], consentStatus: 'not_recorded' },
+    { number: '+442070313000', roles: ['unclassified'], sources: ['legacy_sheet'], consentStatus: 'not_recorded', reviewRequired: true },
+  ], 1);
+  const nanp = grouped.groups.find(group => group.callingCode === '+1');
+  assert(nanp);
+  assert.equal(nanp.count, 2);
+  assert.equal(nanp.label.includes('shared code (+1)'), true);
+  assert.deepEqual(nanp.countries, ['Canada', 'United States']);
+  assert.deepEqual(nanp.numbers.map(value => value.e164).sort(), ['+12025550100', '+14165550100']);
+
+  const uk = grouped.groups.find(group => group.callingCode === '+44');
+  assert(uk);
+  assert.equal(uk.count, 1);
+  assert.equal(uk.label.includes('shared code (+44)'), true);
+  assert.equal(grouped.missingNumberCount, 2);
+  assert.equal(grouped.needsReviewCount, 3);
+  assert.deepEqual(grouped.needsReview.map(item => item.reason).sort(), ['country_unresolved', 'invalid_number', 'source_review_required']);
+  assert.equal(grouped.consentStatus, 'not_recorded');
+});
+
+test('custom lists use authoritative show expiry or require a short standalone expiry', () => {
+  const now = Date.parse('2026-11-19T12:00:00.000Z');
+  const show = {
+    showId: 'synthetic-show-id', name: 'Synthetic show', status: 'ready',
+    startsAt: '2026-11-20T19:00:00.000Z', endsAt: '2026-11-20T21:00:00.000Z',
+    contactsExpireAt: '2026-11-22T21:00:00.000Z', deliveryType: 'private',
+    bookingDistinction: 'Private DMN'
+  };
+  const showScoped = createCustomList({ name: '  Manual guests  ', numbers: '+1 202-555-0100, +12025550100', show }, now);
+  assert.equal(showScoped.ok, true);
+  assert.equal(showScoped.group.name, 'Manual guests');
+  assert.equal(showScoped.group.showId, 'synthetic-show-id');
+  assert.equal(showScoped.group.expiresAtIso, show.contactsExpireAt);
+  assert.deepEqual(showScoped.group.list, ['+12025550100']);
+
+  assert.equal(createCustomList({ name: 'Standalone', numbers: '+12025550100' }, now).error, 'standalone_expiry_required');
+  const standalone = createCustomList({ name: 'Standalone', numbers: '+12025550100', expiryHours: 24 }, now);
+  assert.equal(standalone.ok, true);
+  assert.equal(Date.parse(standalone.group.expiresAtIso), now + 24 * 60 * 60 * 1000);
+  assert.equal(standalone.group.showId, null);
+
+  const invalid = createCustomList({ name: 'Needs correction', numbers: '020 7031 3000', show }, now);
+  assert.equal(invalid.error, 'numbers_need_review');
+  assert.equal(invalid.needsReview[0].original, '020 7031 3000');
+  assert.equal(createCustomList({ name: 'Cancelled', numbers: '+12025550100', show: { ...show, status: 'cancelled' } }, now).error, 'show_not_sendable');
+});
+
+test('Summons messaging proxy sends only the short-lived bearer token and exact show ID', async () => {
+  const env = { NODE_ENV: 'test', SUMMONS_MESSAGING_API_BASE_URL: 'https://summons.example.invalid/' };
+  let request;
+  const fetchImpl = async (url, init) => {
+    request = { url: String(url), init };
+    return new Response(JSON.stringify({
+      showId: 'calendar-event-1', status: 'ready', recipients: [{ number: '+12025550100' }], warnings: []
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  const result = await getSummonsShowRecipients('short-lived-user-token', 'calendar-event-1', { env, fetchImpl });
+  assert.equal(result.showId, 'calendar-event-1');
+  assert.equal(request.url, 'https://summons.example.invalid/api/messaging/recipients?show_id=calendar-event-1');
+  assert.equal(request.init.method, 'GET');
+  assert.equal(request.init.cache, 'no-store');
+  assert.equal(request.init.redirect, 'error');
+  assert.equal(request.init.headers.Authorization, 'Bearer short-lived-user-token');
+
+  await assert.rejects(getSummonsMessagingShows('short-lived-user-token', {
+    env: { NODE_ENV: 'test' }, fetchImpl
+  }), error => error instanceof SummonsMessagingApiError && error.status === 503);
+});
+
+test('Summons recipient proxy rejects a mismatched show identity and sanitizes upstream errors', async () => {
+  const options = {
+    env: { NODE_ENV: 'test', SUMMONS_MESSAGING_API_BASE_URL: 'https://summons.example.invalid' },
+    fetchImpl: async () => new Response(JSON.stringify({ showId: 'another-show', recipients: [] }), { status: 200 }),
+  };
+  await assert.rejects(getSummonsShowRecipients('short-lived-user-token', 'requested-show', options),
+    error => error instanceof SummonsMessagingApiError && error.code === 'show_source_unavailable');
+
+  await assert.rejects(getSummonsShowRecipients('short-lived-user-token', 'requested-show', {
+    ...options,
+    fetchImpl: async () => new Response(JSON.stringify({ error: 'private database details' }), { status: 403 }),
+  }), error => error instanceof SummonsMessagingApiError && error.code === 'messaging_role_required' && !/private database/.test(error.message));
 });
 
 test('unauthenticated or under-privileged API requests stop before protected work', async () => {
