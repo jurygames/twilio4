@@ -49,6 +49,14 @@ export default function SendPanel({ groups, selectedGroupId, onSelectGroup, sele
     kind: group.kind || 'custom',
     scope: group.scope || (group.showId ? 'show' : 'standalone'),
     ...(group.showId ? { showId: group.showId } : {}),
+    ...(group.scope === 'show' ? {
+      showStartsAt: group.showStartsAt,
+      showEndsAt: group.showEndsAt,
+      showName: group.showName,
+      showLocation: group.showLocation || null,
+      deliveryType: group.deliveryType,
+      bookingDistinction: group.bookingDistinction,
+    } : {}),
     ...(group.expiresAtIso ? { expiresAtIso: group.expiresAtIso } : {})
   });
 
@@ -78,7 +86,7 @@ export default function SendPanel({ groups, selectedGroupId, onSelectGroup, sele
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'preview_unavailable');
-      setPendingData({ group, requestId, template: data.template, previewToken: data.previewToken || null, approvalToken: null, canApprove: Boolean(data.canApprove), warnings: data.warnings || [] });
+      setPendingData({ group, show: data.show || null, countryGroups: data.countryGroups || [], exclusions: data.exclusions || null, requestId, template: data.template, previewToken: data.previewToken || null, approvalToken: null, canApprove: Boolean(data.canApprove), warnings: data.warnings || [] });
       setConsentAcknowledged(false);
       setConfirmOpen(true);
       setStatus('Review the exact server-loaded template and recipient list.');
@@ -212,12 +220,16 @@ export default function SendPanel({ groups, selectedGroupId, onSelectGroup, sele
             <p className="mb-2">Sender: <strong>{pendingData.template.from}</strong></p>
             {pendingData.group.showId ? (
               <>
-                <p className="mb-2">Exact show: <strong>{pendingData.group.showName || selectedShow?.name || 'Selected performance'}</strong></p>
-                <p className="mb-2">Performance: <strong>{londonDateTime(pendingData.group.showStartsAt || selectedShow?.startsAt)}</strong> · {pendingData.group.deliveryType || selectedShow?.deliveryType || 'type needs review'} · {pendingData.group.bookingDistinction || selectedShow?.bookingDistinction || 'booking type needs review'}{(pendingData.group.showLocation || selectedShow?.location) ? ` · ${pendingData.group.showLocation || selectedShow?.location}` : ''}</p>
+            <p className="mb-2">Exact show: <strong>{pendingData.show?.name || pendingData.group.showName || selectedShow?.name || 'Selected performance'}</strong></p>
+                <p className="mb-2">Performance: <strong>{londonDateTime(pendingData.show?.startsAt || pendingData.group.showStartsAt || selectedShow?.startsAt)}</strong> · {pendingData.show?.deliveryType || pendingData.group.deliveryType || selectedShow?.deliveryType || 'type needs review'} · {pendingData.show?.bookingDistinction || pendingData.group.bookingDistinction || selectedShow?.bookingDistinction || 'booking type needs review'}{(pendingData.show?.location || pendingData.group.showLocation || selectedShow?.location) ? ` · ${pendingData.show?.location || pendingData.group.showLocation || selectedShow?.location}` : ''}</p>
                 <p className="mb-2 break-all font-mono text-xs">Show ID: {pendingData.group.showId}</p>
               </>
             ) : <p className="mb-2">Standalone list; expiry: <strong>{new Date(pendingData.group.expiresAtIso).toLocaleString('en-GB', { timeZone: 'Europe/London' })}</strong> London time</p>}
             <p className="mb-2">Recipient group: <strong>{pendingData.group.name}</strong> · {uniqueRecipients.length} unique recipients</p>
+            <p className="mb-2 text-xs text-gray-400">Country groups: {(pendingData.countryGroups || []).map(item => `${item.label}: ${item.count}`).join(' · ') || 'needs review'}</p>
+            {pendingData.exclusions?.source === 'summons' ? (
+              <p className="mb-2 text-xs text-gray-400">Excluded from the automatic list: {pendingData.exclusions.missingNumberCount} missing number{pendingData.exclusions.missingNumberCount === 1 ? '' : 's'} · {pendingData.exclusions.needsReviewCount} needing review.</p>
+            ) : <p className="mb-2 text-xs text-gray-400">Manual list: numbers were checked for format and duplicates; verify the list is complete and each recipient is eligible.</p>}
             <p className="mb-2 text-xs text-gray-400">{pendingData.group.kind === 'automatic' ? 'Summons contact list' : 'Manual custom list'} · expires {pendingData.group.expiresAtIso ? new Date(pendingData.group.expiresAtIso).toLocaleString('en-GB', { timeZone: 'Europe/London' }) : 'not recorded'} London time</p>
             <p className="mb-2 text-xs text-gray-400">Estimated cost: unavailable for this preview.</p>
             {pendingData.template.type === 'call' ? (
