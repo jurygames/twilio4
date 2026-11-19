@@ -40,6 +40,8 @@ test('live API routes deny anonymous requests without invoking provider operatio
     ['GET', '/api/templates', undefined],
     ['GET', '/api/messaging/shows', undefined],
     ['GET', '/api/messaging/recipients?show_id=synthetic-event', undefined],
+    ['GET', '/api/twilio/messaging/shows', undefined],
+    ['GET', '/api/twilio/messaging/recipients?show_id=synthetic-event', undefined],
     ['POST', '/api/templates', { name: 'anonymous', type: 'SMS' }],
     ['POST', '/api/send-preview', { group: { name: 'anonymous', list: ['+447700900123'] }, templateId: 'x', requestId: '02bb5d84-2e59-4a8e-9d3d-e10c0731b751' }],
     ['POST', '/api/send-approve', { group: { name: 'anonymous', list: ['+447700900123'] }, templateId: 'x', requestId: '02bb5d84-2e59-4a8e-9d3d-e10c0731b751', consentAcknowledged: true }],

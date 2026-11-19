@@ -52,7 +52,7 @@ export default function MessagingDashboard({ canSend }) {
     setRecipientLoading(true);
     setRecipientError('');
     try {
-      const response = await fetch(`/api/messaging/recipients?show_id=${encodeURIComponent(showId)}`, { cache: 'no-store' });
+      const response = await fetch(`/api/twilio/messaging/recipients?show_id=${encodeURIComponent(showId)}`, { cache: 'no-store' });
       const payload = await response.json().catch(() => ({}));
       if (requestId !== recipientRequestRef.current || selectedShowIdRef.current !== showId) return;
       if (!response.ok) {
@@ -87,7 +87,7 @@ export default function MessagingDashboard({ canSend }) {
     setShowLoading(true);
     setShowError('');
     try {
-      const response = await fetch('/api/messaging/shows', { cache: 'no-store' });
+      const response = await fetch('/api/twilio/messaging/shows', { cache: 'no-store' });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         if (response.status === 401 || response.status === 403) {
