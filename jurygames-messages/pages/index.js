@@ -1,49 +1,35 @@
-// pages/index.js
-import Head from 'next/head';
+﻿import Head from 'next/head';
 import Link from 'next/link';
-import GroupManager from '../components/GroupManager';
-import SendPanel from '../components/SendPanel';
-import StatusPanel from '../components/StatusPanel';
+import MessagingDashboard from '../components/MessagingDashboard';
 import SessionGate from '../components/SessionGate';
-import { useState } from 'react';
-
-function MessagingHome({ canSend }) {
-  const [groups, setGroups] = useState([]);
-  const [logs, setLogs] = useState([]);
-
-  return (
-    <>
-      <Head>
-        <title>Calls & Texts | Jury Games</title>
-        <link rel="icon" type="image/png" href="/favicon.png" />
-      </Head>
-      <div className="dark bg-gray-900 text-white min-h-screen">
-        <header className="bg-[#333F50] py-6 flex items-center justify-center space-x-4">
-          <img src="/favicon.png" alt="Jury Games Logo" className="h-8 filter invert" />
-          <h1 className="text-5xl font-bold font-['Roboto_Condensed'] uppercase text-white">
-            Jury Games
-          </h1>
-        </header>
-        <main className="p-6 grid md:grid-cols-2 gap-6">
-          <div>
-            <GroupManager onGroupsChange={setGroups} />
-          </div>
-          <div>
-            <SendPanel groups={groups} canSend={canSend} onLog={entry => setLogs(previous => [entry, ...previous])} />
-            <StatusPanel logs={logs} />
-          </div>
-        </main>
-        <div className="p-6 flex justify-center">
-          <Link href="/admin" className="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded inline-flex items-center">
-            <span className="mr-2">🔧</span>
-            Manage Templates
-          </Link>
-        </div>
-      </div>
-    </>
-  );
-}
 
 export default function Home() {
-  return <SessionGate requiredRole="operator">{({ canSend }) => <MessagingHome canSend={canSend} />}</SessionGate>;
+  return (
+    <SessionGate requiredRole="operator">
+      {({ role, canSend }) => (
+        <>
+          <Head>
+            <title>Calls & Texts | Jury Games</title>
+            <link rel="icon" type="image/png" href="/vc-ap-4b1f7f/favicon.png" />
+          </Head>
+          <div className="dark min-h-screen bg-gray-900 text-white">
+            <header className="flex items-center justify-center space-x-4 bg-[#333F50] py-6">
+              <img src="/vc-ap-4b1f7f/favicon.png" alt="Jury Games Logo" className="h-8 filter invert" />
+              <h1 className="font-['Roboto_Condensed'] text-4xl font-bold uppercase text-white">Jury Games Messaging</h1>
+            </header>
+            <main className="mx-auto max-w-7xl space-y-4 p-4 md:p-6">
+              {role === 'admin' ? (
+                <div className="flex justify-end">
+                  <Link href="/admin" className="inline-flex items-center rounded bg-gray-800 px-4 py-2 text-sm text-white hover:bg-gray-700">
+                    Manage Templates
+                  </Link>
+                </div>
+              ) : null}
+              <MessagingDashboard canSend={canSend} />
+            </main>
+          </div>
+        </>
+      )}
+    </SessionGate>
+  );
 }

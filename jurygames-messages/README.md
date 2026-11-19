@@ -10,6 +10,7 @@ Server-side runtime configuration:
 
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
+- `SUMMONS_MESSAGING_API_BASE_URL` — the server-side Summons messaging API origin; Production uses `https://summons.jurygames.com`. Leave Preview/Development unset until a staging API origin is configured; requests fail closed.
 - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`
 - `DEFAULT_FROM_NUMBER_UK`, `DEFAULT_FROM_NUMBER_UK_ALT`, `DEFAULT_FROM_NUMBER_US` or `TWILIO_ALLOWED_FROM_NUMBERS`
 - `TWILIO_ALLOWED_MEDIA_HOSTS` for call audio URLs
@@ -22,7 +23,9 @@ Server-side runtime configuration:
 
 Sending is denied unless all three messaging flags are explicitly set to `true`, the approval secret is configured, and the short-lived preview approval is valid. Keep the flags disabled until the consent and opt-out review is complete, manual-list retention is approved, the Summons messaging migration is installed, and the callback route can receive Twilio requests while preserving signature verification. Voice calls additionally require `TWILIO_CALLBACK_INGRESS_READY=true` after the narrow signed callback path is verified; do not disable broad Vercel SSO protection. Operators must review the server-loaded template and explicitly acknowledge recipient eligibility; the signed two-minute approval binds the operator, template, sender, group, and normalized recipient set. The send endpoint accepts only E.164 recipient strings, caps each request at 50 unique numbers, allows up to 10 send attempts per operator per hour, limits provider concurrency to two and requires a per-request idempotency key. Missing guard functions fail closed. Twilio acceptance is reported separately from delivery.
 
-Templates and aggregate send outcomes live in Summons. Every Twilio4 database request uses the signed-in user's short-lived access token and the public anon key; Summons RLS limits operators to reading templates and their own send status, and reserves template edits for admins. Twilio4 must not receive a Summons service-role key. Recipient lists continue to come from the existing Summons contact lifecycle and are not copied into messaging tables or browser storage. The public health route returns liveness only and reads no database rows.
+Templates and aggregate send outcomes live in Summons. Every Twilio4 database/API request uses the signed-in user's short-lived access token and the public anon key; Summons RLS limits operators to reading templates and their own send status, and reserves template edits for admins. Twilio4 must not receive a Summons service-role key. Recipient lists come from the existing Summons contact lifecycle, are held in browser memory only, and are removed at their server-provided expiry. They are not written to local storage or a second recipient table. The public health route returns liveness only and reads no database rows.
+
+The intended unified Summons entry point is `/admin/messaging`. Vercel routes that path and the required Twilio4 assets/API paths through the `jury-games-messaging` microfrontend group after the child application is ready; Summons show/recipient reads remain on Summons routes. The child app keeps its own Supabase role checks and app session when opened through the Summons host.
 
 ## Development
 
