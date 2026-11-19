@@ -52,16 +52,14 @@ test('cookie parsing is bounded and rejects malformed encodings', () => {
   assert.match(security.buildRefreshCookie('refresh-only', false), /Path=\/api\/auth\/session;.*HttpOnly; SameSite=Strict/);
 });
 
-test('a verified Supabase JWT must identify the current user and a bounded live session', () => {
+test('a verified Supabase JWT must identify the current user and a bounded session lifetime', () => {
   const userId = '6a9bd14c-53be-4f4c-a78e-1a2327dded5e';
-  const sessionId = '4bce58d0-b1b2-4e7f-9c78-50da017c29b9';
-  const payload = Buffer.from(JSON.stringify({ sub: userId, session_id: sessionId, iat: 100, exp: 1000 })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({ sub: userId, iat: 100, exp: 1000 })).toString('base64url');
   const token = `header.${payload}.signature`;
-  assert.equal(security.sessionIdFromAccessToken(token, userId), sessionId);
-  assert.equal(security.sessionIdFromAccessToken(token, 'other-user'), null);
   assert.equal(security.sessionExpiresAt(token, userId, 0), 1000 * 1000);
   assert.equal(security.sessionExpiresAt(token, userId, 900 * 1000), 1000 * 1000);
-  const shortPayload = Buffer.from(JSON.stringify({ sub: userId, session_id: sessionId, exp: 2000 })).toString('base64url');
+  assert.equal(security.sessionExpiresAt(token, 'other-user', 0), null);
+  const shortPayload = Buffer.from(JSON.stringify({ sub: userId, exp: 2000 })).toString('base64url');
   assert.equal(security.sessionExpiresAt(`header.${shortPayload}.signature`, userId, 5000), 905000);
 });
 
@@ -209,7 +207,8 @@ test('database clients use an authenticated user token and never require a servi
   assert.match(clientSource, /Authorization:\s*`Bearer \$\{accessToken\}`/);
   assert.doesNotMatch(clientSource, /SUPABASE_SERVICE_ROLE_KEY|getServiceSupabaseClient/);
   assert.doesNotMatch(authSource + sendSource + templatesSource, /getServiceSupabaseClient|SUPABASE_SERVICE_ROLE_KEY/);
-  assert.match(authSource, /createUserScopedSupabaseClient\(token\)\.rpc\('is_jg_messaging_session_active'/);
+  assert.match(authSource, /getSupabaseClient\(\)\.auth\.getUser\(token\)/);
+  assert.doesNotMatch(authSource, /is_jg_messaging_session_active/);
   assert.match(sendSource, /userClient = messagingUserClient\(session\)/);
   assert.match(sendSource, /userClient\.rpc\('claim_jg_message_send'/);
   assert.match(templatesSource, /\.from\('jg_messaging_templates'\)/);

@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { createAuthSupabaseClient, createUserScopedSupabaseClient } from '../../../lib/supabaseClient';
+import { createAuthSupabaseClient } from '../../../lib/supabaseClient';
 import { currentMessagingUser } from '../../../lib/messagingAuth';
 import security from '../../../lib/security';
 
@@ -14,7 +14,6 @@ const {
   REFRESH_COOKIE,
   roleForUser,
   sessionExpiresAt,
-  sessionIdFromAccessToken,
   SESSION_COOKIE,
   takeLoginAttempt,
 } = security;
@@ -56,18 +55,11 @@ export default async function handler(req, res) {
       const role = roleForUser(data?.user);
       const token = data?.session?.access_token;
       const refreshToken = data?.session?.refresh_token;
-      const sessionId = data?.user && typeof token === 'string' ? sessionIdFromAccessToken(token, data.user.id) : null;
       const expiresAt = data?.user && typeof token === 'string' ? sessionExpiresAt(token, data.user.id) : null;
       if (error || !role || typeof token !== 'string' || token.length > 4096 ||
-          typeof refreshToken !== 'string' || refreshToken.length > 4096 || !sessionId || !expiresAt) {
+          typeof refreshToken !== 'string' || refreshToken.length > 4096 || !expiresAt) {
         return res.status(401).json({ error: 'sign_in_failed' });
       }
-      const { data: active, error: sessionError } = await createUserScopedSupabaseClient(token).rpc('is_jg_messaging_session_active', {
-        p_user_id: data.user.id,
-        p_session_id: sessionId,
-      });
-      if (sessionError) return res.status(503).json({ error: 'authentication_unavailable' });
-      if (active !== true) return res.status(401).json({ error: 'sign_in_failed' });
       res.setHeader('Set-Cookie', [buildCookie(token), buildRefreshCookie(refreshToken)]);
       return res.status(200).json({ role, canSend: canSend(), expiresAt });
     } catch {

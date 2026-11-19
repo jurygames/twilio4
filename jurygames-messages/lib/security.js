@@ -197,12 +197,6 @@ function readAccessTokenClaims(token) {
   }
 }
 
-function sessionIdFromAccessToken(token, expectedUserId) {
-  const claims = readAccessTokenClaims(token);
-  if (claims?.sub !== expectedUserId || !isUuid(claims.session_id)) return null;
-  return claims.session_id;
-}
-
 function sessionExpiresAt(token, expectedUserId, now = Date.now()) {
   const claims = readAccessTokenClaims(token);
   if (claims?.sub !== expectedUserId || !Number.isSafeInteger(claims.exp)) return null;
@@ -396,7 +390,6 @@ module.exports = {
   isNewSendClaim,
   summarizeProviderOutcomes,
   readAccessTokenClaims,
-  sessionIdFromAccessToken,
   sessionExpiresAt,
   canSend,
   APPROVAL_TTL_MS,

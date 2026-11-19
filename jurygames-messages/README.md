@@ -4,7 +4,7 @@ Next.js 15.5.28 Pages Router interface for approved SMS, WhatsApp and voice temp
 
 ## Access
 
-The browser does not contain an authentication password. Operators sign in through Supabase Auth. A trusted administrator must set `app_metadata.jurygames_messaging_role` to `operator` or `admin`; user-editable metadata is not accepted. The access cookie is `HttpOnly` and lasts 15 minutes; the refresh cookie is also `HttpOnly`, expires with it, and is scoped to the sign-out endpoint. Every protected request checks the current Auth user, current role, and the Supabase `auth.sessions` row for the token's `session_id`. Sign out revokes the local Supabase session. Operators can read templates and request sends. Admins can create, edit and delete templates.
+The browser does not contain an authentication password. Operators sign in through Supabase Auth. A trusted administrator must set `app_metadata.jurygames_messaging_role` to `operator` or `admin`; user-editable metadata is not accepted. Every protected request verifies the current Auth user and role with Supabase. The access cookie is `HttpOnly` and bounded to 15 minutes; the refresh cookie is also `HttpOnly`, expires with it, and is scoped to the sign-out endpoint. Sign out revokes the local Supabase refresh session. Operators can read templates and request sends. Admins can create, edit and delete templates.
 
 Server-side runtime configuration:
 
