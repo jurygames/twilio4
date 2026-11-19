@@ -5,28 +5,35 @@ export default function GroupManager({ onGroupsChange }) {
   const [groups, setGroups] = useState([]);
   const [name, setName] = useState('');
   const [numbers, setNumbers] = useState('');
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    const saved = JSON.parse(localStorage.getItem('groups') || '[]');
-    setGroups(saved);
-    onGroupsChange?.(saved);
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem('groups', JSON.stringify(groups));
-  }, [groups]);
+    onGroupsChange?.(groups);
+  }, [groups, onGroupsChange]);
 
   const saveGroup = () => {
-    const list = numbers
+    const list = [...new Set(numbers
       .split(/\r?\n|,/)
-      .map(n => n.replace(/\s+/g, '').trim())
-      .filter(n => n);
-    if (!name || list.length === 0) return;
-    const updated = [...groups, { name, list }];
+      .map(n => n.replace(/[\s().-]/g, '').trim())
+      .filter(n => n))];
+    if (!name.trim() || name.trim().length > 80) {
+      setError('Enter a group name of 1–80 characters.');
+      return;
+    }
+    if (list.length === 0 || list.some(n => !/^\+[1-9]\d{7,14}$/.test(n))) {
+      setError('Use international E.164 numbers, including + and country code. No number was saved.');
+      return;
+    }
+    if (list.length > 50) {
+      setError('A group can contain up to 50 unique numbers.');
+      return;
+    }
+    const updated = [...groups, { name: name.trim(), list }];
     setGroups(updated);
     onGroupsChange?.(updated);
     setName('');
     setNumbers('');
+    setError('');
   };
 
   const deleteGroup = idx => {
@@ -39,6 +46,7 @@ export default function GroupManager({ onGroupsChange }) {
     if (confirm('Permanently delete ALL groups?')) {
       setGroups([]);
       onGroupsChange?.([]);
+      setError('');
     }
   };
 
@@ -74,6 +82,7 @@ export default function GroupManager({ onGroupsChange }) {
           </li>
         ))}
       </ul>
+      {error ? <p role="alert" className="mt-2 text-sm text-amber-300">{error}</p> : null}
     </div>
 );
 }

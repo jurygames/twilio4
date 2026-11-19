@@ -5,18 +5,26 @@ export default function TemplateManager() {
   const [templates, setTemplates] = useState([]);
   const [originalTemplates, setOriginalTemplates] = useState([]);
   const [shows, setShows] = useState([]);
+  const [senders, setSenders] = useState([]);
   const [filterShow, setFilterShow] = useState('');
-  const [newShow, setNewShow] = useState('');
+  const [error, setError] = useState('');
 
   // Fetch templates on mount and refresh
   const fetchTemplates = async () => {
     const res = await fetch('/api/templates');
-    const data = await res.json();
-    const cloned = data.map(t => ({ ...t }));
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !Array.isArray(data.templates)) {
+      setError(data.error || 'Templates are unavailable.');
+      return;
+    }
+    const rows = data.templates;
+    const cloned = rows.map(t => ({ ...t }));
     setTemplates(cloned);
     setOriginalTemplates(cloned.map(t => ({ ...t })));
-    const uniqueShows = Array.from(new Set(data.map(t => t.show)));
+    setSenders(Array.isArray(data.allowedFromNumbers) ? data.allowedFromNumbers : []);
+    const uniqueShows = Array.from(new Set(rows.map(t => t.show)));
     setShows(uniqueShows);
+    setError('');
     if (!filterShow && uniqueShows.length > 0) {
       setFilterShow(uniqueShows[0]);
     }
@@ -39,7 +47,7 @@ export default function TemplateManager() {
     const { id, ...fields } = tpl;
     const res = await fetch(`/api/templates/${id}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-jurygames-request': '1' },
       body: JSON.stringify(fields),
     });
     if (res.ok) {
@@ -64,29 +72,40 @@ export default function TemplateManager() {
     if (!confirm('Are you sure you want to PERMANENTLY delete this template?')) {
       return;
     }
-    await fetch(`/api/templates/${tpl.id}`, { method: 'DELETE' });
+    const res = await fetch(`/api/templates/${tpl.id}`, { method: 'DELETE', headers: { 'x-jurygames-request': '1' } });
+    if (!res.ok) {
+      setError('Template deletion failed.');
+      return;
+    }
     setTemplates(prev => prev.filter((_, i) => i !== index));
     setOriginalTemplates(prev => prev.filter((_, i) => i !== index));
   };
 
   const addTemplate = async () => {
     if (!filterShow) return;
+    if (!senders.length) {
+      setError('No approved sender numbers are configured.');
+      return;
+    }
     const newTpl = {
-      name: '',
+      name: 'New message template',
       type: 'SMS',
       show: filterShow,
-      from_number: '+447723453049',
+      from_number: senders[0],
       content: '',
       media_url: '',
       summary: ''
     };
     const res = await fetch('/api/templates', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-jurygames-request': '1' },
       body: JSON.stringify(newTpl),
     });
     if (res.ok) {
       await fetchTemplates();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || 'Template creation failed.');
     }
   };
 
@@ -110,6 +129,7 @@ export default function TemplateManager() {
           ))}
         </select>
       </div>
+      {error ? <p role="alert" className="mb-3 text-sm text-amber-300">{error}</p> : null}
 
       {/* Add Template button at top */}
       <div className="mb-4">
@@ -146,9 +166,7 @@ export default function TemplateManager() {
             value={tpl.from_number}
             onChange={e => updateLocal(idx, 'from_number', e.target.value)}
           >
-            <option>+447723453049</option>
-            <option>+447480780992</option>
-            <option>+18448997279</option>
+            {senders.map(sender => <option key={sender} value={sender}>{sender}</option>)}
           </select>
           {tpl.type === 'Call' ? (
             <input

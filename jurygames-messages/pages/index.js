@@ -4,9 +4,10 @@ import Link from 'next/link';
 import GroupManager from '../components/GroupManager';
 import SendPanel from '../components/SendPanel';
 import StatusPanel from '../components/StatusPanel';
+import SessionGate from '../components/SessionGate';
 import { useState } from 'react';
 
-export default function Home() {
+function MessagingHome({ canSend }) {
   const [groups, setGroups] = useState([]);
   const [logs, setLogs] = useState([]);
 
@@ -28,19 +29,21 @@ export default function Home() {
             <GroupManager onGroupsChange={setGroups} />
           </div>
           <div>
-            <SendPanel groups={groups} onLog={entry => setLogs([entry, ...logs])} />
+            <SendPanel groups={groups} canSend={canSend} onLog={entry => setLogs(previous => [entry, ...previous])} />
             <StatusPanel logs={logs} />
           </div>
         </main>
         <div className="p-6 flex justify-center">
-          <Link href="/admin">
-            <button className="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded inline-flex items-center">
-              <span className="mr-2">🔧</span>
-              Manage Templates
-            </button>
+          <Link href="/admin" className="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded inline-flex items-center">
+            <span className="mr-2">🔧</span>
+            Manage Templates
           </Link>
         </div>
       </div>
     </>
   );
+}
+
+export default function Home() {
+  return <SessionGate requiredRole="operator">{({ canSend }) => <MessagingHome canSend={canSend} />}</SessionGate>;
 }
