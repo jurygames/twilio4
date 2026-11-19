@@ -1,5 +1,6 @@
 import { requireMessagingRole, messagingUserClient } from '../../lib/messagingAuth';
 import { resolveVoiceFrom } from '../../lib/resolveVoiceFrom';
+import { validateSendGroup } from '../../lib/sendGroupAuthorization';
 import security from '../../lib/security';
 
 const { callbackUrl, canSend, createPreviewToken, isTrustedMutation, parseSendRequest, validateTemplateForSend } = security;
@@ -21,6 +22,8 @@ export default async function handler(req, res) {
   if (!parsedRequest.ok) return res.status(400).json({ error: parsedRequest.error });
 
   try {
+    const groupAuthorization = await validateSendGroup(parsedRequest, session.accessToken);
+    if (!groupAuthorization.ok) return res.status(groupAuthorization.status).json({ error: groupAuthorization.error });
     const { data: template, error } = await messagingUserClient(session)
       .from('jg_messaging_templates')
       .select('*')
@@ -51,6 +54,16 @@ export default async function handler(req, res) {
       requestId: parsedRequest.requestId,
       templateId: parsedRequest.templateId,
       groupName: parsedRequest.groupName,
+      groupKind: parsedRequest.groupKind,
+      groupScope: parsedRequest.groupScope,
+      showId: parsedRequest.showId,
+      showStartsAt: parsedRequest.showStartsAt,
+      showEndsAt: parsedRequest.showEndsAt,
+      showName: parsedRequest.showName,
+      showLocation: parsedRequest.showLocation,
+      deliveryType: parsedRequest.deliveryType,
+      bookingDistinction: parsedRequest.bookingDistinction,
+      expiresAtIso: parsedRequest.expiresAtIso,
       recipients: parsedRequest.recipients,
       template,
       resolvedFrom,
@@ -64,6 +77,17 @@ export default async function handler(req, res) {
       canApprove: Boolean(ready && previewToken),
       previewToken,
       warnings,
+      countryGroups: groupAuthorization.countryGroups,
+      exclusions: groupAuthorization.exclusions,
+      show: groupAuthorization.show ? {
+        showId: groupAuthorization.show.showId,
+        name: groupAuthorization.show.name,
+        startsAt: groupAuthorization.show.startsAt,
+        endsAt: groupAuthorization.show.endsAt,
+        location: groupAuthorization.show.location || null,
+        deliveryType: groupAuthorization.show.deliveryType,
+        bookingDistinction: groupAuthorization.show.bookingDistinction,
+      } : null,
       template: {
         id: String(template.id),
         name: String(template.name || '').slice(0, 120),

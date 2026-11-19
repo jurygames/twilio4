@@ -1,6 +1,7 @@
 import { sendSMS, sendWhatsApp, makeCall } from '../../lib/twilioClient';
 import { resolveVoiceFrom } from '../../lib/resolveVoiceFrom';
 import { requireMessagingRole, messagingUserClient } from '../../lib/messagingAuth';
+import { validateSendGroup } from '../../lib/sendGroupAuthorization';
 import security from '../../lib/security';
 
 const {
@@ -46,6 +47,8 @@ export default async function handler(req, res) {
   let templateRecord;
   let userClient;
   try {
+    const groupAuthorization = await validateSendGroup(parsedRequest, session.accessToken);
+    if (!groupAuthorization.ok) return res.status(groupAuthorization.status).json({ error: groupAuthorization.error });
     userClient = messagingUserClient(session);
     const { data: template, error } = await userClient
       .from('jg_messaging_templates')
@@ -74,6 +77,16 @@ export default async function handler(req, res) {
     requestId,
     templateId,
     groupName,
+    groupKind: parsedRequest.groupKind,
+    groupScope: parsedRequest.groupScope,
+    showId: parsedRequest.showId,
+    showStartsAt: parsedRequest.showStartsAt,
+    showEndsAt: parsedRequest.showEndsAt,
+    showName: parsedRequest.showName,
+    showLocation: parsedRequest.showLocation,
+    deliveryType: parsedRequest.deliveryType,
+    bookingDistinction: parsedRequest.bookingDistinction,
+    expiresAtIso: parsedRequest.expiresAtIso,
     recipients,
     template: templateRecord,
     resolvedFrom,

@@ -7,6 +7,7 @@ const security = require('../lib/security');
 const { normalizePhoneNumber, groupInternationalRecipients } = require('../lib/phoneNumbers');
 const { createCustomList } = require('../lib/customLists');
 const { SummonsMessagingApiError, getSummonsMessagingShows, getSummonsShowRecipients } = require('../lib/summonsMessagingApi');
+const { validateSendGroup } = require('../lib/sendGroupAuthorization');
 
 const sender = '+447700900123';
 
@@ -200,18 +201,49 @@ test('send mutations require same-origin and the application request header', ()
 });
 
 test('send request accepts only a bounded E.164 list and ignores caller-supplied template fields', () => {
+  const expiry = '2026-11-22T21:00:00.000Z';
+  const showGroup = {
+    name: 'Synthetic show group',
+    list: [sender, sender, '+14155550123'],
+    kind: 'automatic',
+    scope: 'show',
+    showId: 'synthetic-calendar-event',
+    showStartsAt: '2026-11-20T19:00:00.000Z',
+    showEndsAt: '2026-11-20T21:00:00.000Z',
+    showName: 'Synthetic Jury Duty',
+    showLocation: 'Synthetic venue',
+    deliveryType: 'private',
+    bookingDistinction: 'Private DMN',
+    expiresAtIso: expiry,
+  };
   const request = security.parseSendRequest({
-    group: { name: 'manual', list: [sender, sender, '+14155550123'] },
+    group: showGroup,
     templateId: 'approved-template-id',
     requestId: '02bb5d84-2e59-4a8e-9d3d-e10c0731b751',
     template: { content: 'attacker-controlled', from: '+19995550123', media_url: 'https://evil.example/audio.mp3' },
   });
   assert.equal(request.ok, true);
   assert.deepEqual(request.recipients, [sender, '+14155550123']);
+  assert.equal(request.showId, 'synthetic-calendar-event');
+  assert.equal(request.expiresAtIso, expiry);
   assert.equal(Object.hasOwn(request, 'template'), false);
-  assert.equal(security.parseSendRequest({ group: { name: 'manual', list: ['020 7946 0018'] }, templateId: 'x', requestId: '02bb5d84-2e59-4a8e-9d3d-e10c0731b751' }).error, 'recipient_number_invalid');
-  assert.equal(security.parseSendRequest({ group: { name: 'manual', list: [sender] }, template: { content: 'only client template' } }).error, 'send_request_invalid');
-  assert.equal(security.parseSendRequest({ group: { name: 'manual', list: Array(51).fill(sender) }, templateId: 'x', requestId: '02bb5d84-2e59-4a8e-9d3d-e10c0731b751' }).error, 'recipient_limit_exceeded');
+  assert.equal(security.parseSendRequest({ group: { ...showGroup, list: ['020 7946 0018'] }, templateId: 'x', requestId: '02bb5d84-2e59-4a8e-9d3d-e10c0731b751' }).error, 'recipient_number_invalid');
+  assert.equal(security.parseSendRequest({ group: { ...showGroup, list: [sender] }, template: { content: 'only client template' } }).error, 'send_request_invalid');
+  assert.equal(security.parseSendRequest({ group: { ...showGroup, list: Array(51).fill(sender) }, templateId: 'x', requestId: '02bb5d84-2e59-4a8e-9d3d-e10c0731b751' }).error, 'recipient_limit_exceeded');
+  assert.equal(security.parseSendRequest({ group: { ...showGroup, showId: 'other-show' }, templateId: 'x', requestId: '02bb5d84-2e59-4a8e-9d3d-e10c0731b751' }).showId, 'other-show');
+  assert.equal(security.parseSendRequest({ group: { ...showGroup, showStartsAt: 'invalid' }, templateId: 'x', requestId: '02bb5d84-2e59-4a8e-9d3d-e10c0731b751' }).error, 'show_time_identity_invalid');
+  assert.equal(security.parseSendRequest({ group: { ...showGroup, expiresAtIso: '2026-11-19T12:00:00.000Z' }, templateId: 'x', requestId: '02bb5d84-2e59-4a8e-9d3d-e10c0731b751' }, Date.parse('2026-11-19T12:00:00.000Z')).error, 'send_group_expiry_invalid');
+
+  const standalone = security.parseSendRequest({
+    group: { name: 'Short list', list: [sender], kind: 'custom', scope: 'standalone', expiresAtIso: '2026-11-20T12:00:00.000Z' },
+    templateId: 'x', requestId: '02bb5d84-2e59-4a8e-9d3d-e10c0731b751',
+  }, Date.parse('2026-11-19T12:00:00.000Z'));
+  assert.equal(standalone.ok, true);
+  assert.equal(standalone.showId, null);
+  assert.equal(security.parseSendRequest({
+    group: { name: 'Long list', list: [sender], kind: 'custom', scope: 'standalone', expiresAtIso: '2026-11-20T13:00:00.000Z' },
+    templateId: 'x', requestId: '02bb5d84-2e59-4a8e-9d3d-e10c0731b751',
+  }, Date.parse('2026-11-19T12:00:00.000Z')).error, 'standalone_expiry_invalid');
 });
 
 test('an existing idempotency claim never dispatches a second provider operation', () => {
@@ -266,6 +298,16 @@ test('approval tokens bind the operator, exact recipients, template, sender, gro
     requestId: '02bb5d84-2e59-4a8e-9d3d-e10c0731b751',
     templateId: 'approved-template-id',
     groupName: 'Friday Jury',
+    groupKind: 'automatic',
+    groupScope: 'show',
+    showId: 'synthetic-calendar-event',
+    showStartsAt: '2026-11-20T19:00:00.000Z',
+    showEndsAt: '2026-11-20T21:00:00.000Z',
+    showName: 'Synthetic Jury Duty',
+    showLocation: 'Synthetic venue',
+    deliveryType: 'private',
+    bookingDistinction: 'Private DMN',
+    expiresAtIso: '2026-11-22T21:00:00.000Z',
     recipients: [sender, '+14155550123'],
     template: { id: 'approved-template-id', name: 'Call time', show: 'Jury Duty', type: 'SMS', from_number: sender, content: 'Doors at seven', summary: 'Arrival time' },
     resolvedFrom: sender,
@@ -278,6 +320,9 @@ test('approval tokens bind the operator, exact recipients, template, sender, gro
   assert.equal(security.verifyApprovalToken(token, request, env, 2000), true);
   assert.equal(security.verifyApprovalToken(token, { ...request, recipients: [sender] }, env, 2000), false);
   assert.equal(security.verifyApprovalToken(token, { ...request, groupName: 'Other group' }, env, 2000), false);
+  assert.equal(security.verifyApprovalToken(token, { ...request, showId: 'parallel-show' }, env, 2000), false);
+  assert.equal(security.verifyApprovalToken(token, { ...request, showEndsAt: '2026-11-21T21:00:00.000Z' }, env, 2000), false);
+  assert.equal(security.verifyApprovalToken(token, { ...request, expiresAtIso: '2026-11-23T21:00:00.000Z' }, env, 2000), false);
   assert.equal(security.verifyApprovalToken(token, { ...request, resolvedFrom: '+14155550123' }, env, 2000), false);
   assert.equal(security.verifyApprovalToken(token, { ...request, consentAcknowledged: false }, env, 2000), false);
   assert.equal(security.verifyApprovalToken(token, request, env, 122000), false);
@@ -287,6 +332,112 @@ test('approval tokens bind the operator, exact recipients, template, sender, gro
   assert.equal(security.verifyPreviewToken(previewToken, previewInput, env, 2000), true);
   assert.equal(security.verifyPreviewToken(previewToken, { ...previewInput, template: { ...request.template, content: 'changed after preview' } }, env, 2000), false);
   assert.equal(security.verifyApprovalToken(previewToken, request, env, 2000), false);
+});
+
+test('send-group authorization binds an exact current show and automatic recipients to Summons', async () => {
+  const now = Date.parse('2026-11-19T12:00:00.000Z');
+  const syntheticRecipient = '+12025550100'; // Fiction-only 555-0100 range.
+  const show = {
+    showId: 'synthetic-calendar-event', name: 'Synthetic Jury Duty',
+    startsAt: '2026-11-20T19:00:00.000Z', endsAt: '2026-11-20T21:00:00.000Z',
+    contactsExpireAt: '2026-11-22T21:00:00.000Z', source: 'dmn',
+    deliveryType: 'private', bookingDistinction: 'Private DMN', status: 'ready', location: 'Synthetic venue'
+  };
+  const recipientShow = {
+    id: show.showId, name: show.name, startsAt: show.startsAt, endsAt: show.endsAt,
+    source: show.source, deliveryType: show.deliveryType, location: show.location
+  };
+  const parsed = security.parseSendRequest({
+    group: {
+      name: 'Synthetic Jury Duty recipients', list: [syntheticRecipient], kind: 'automatic', scope: 'show',
+      showId: show.showId, showStartsAt: show.startsAt, showEndsAt: show.endsAt,
+      showName: show.name, showLocation: show.location, deliveryType: show.deliveryType,
+      bookingDistinction: show.bookingDistinction, expiresAtIso: show.contactsExpireAt
+    }, templateId: 'template', requestId: '02bb5d84-2e59-4a8e-9d3d-e10c0731b751'
+  }, now);
+  assert.equal(parsed.ok, true);
+  const allowed = await validateSendGroup(parsed, 'synthetic-token', {
+    now,
+    listShows: async () => ({ shows: [show] }),
+    readRecipients: async token => {
+      assert.equal(token, 'synthetic-token');
+      return { showId: show.showId, status: 'ready', show: recipientShow, expiresAtIso: show.contactsExpireAt, recipients: [{ number: syntheticRecipient, reviewRequired: false }] };
+    }
+  });
+  assert.equal(allowed.ok, true);
+  assert.equal(allowed.show.showId, show.showId);
+
+  const wrongPerformance = await validateSendGroup({ ...parsed, showId: 'another-same-time-show' }, 'synthetic-token', {
+    now, listShows: async () => ({ shows: [show] }), readRecipients: async () => { throw new Error('must_not_read_other_show'); }
+  });
+  assert.equal(wrongPerformance.error, 'show_not_sendable');
+
+  const changedTime = await validateSendGroup({ ...parsed, showStartsAt: '2026-11-20T20:00:00.000Z' }, 'synthetic-token', {
+    now, listShows: async () => ({ shows: [show] }), readRecipients: async () => { throw new Error('must_not_read_changed_show'); }
+  });
+  assert.equal(changedTime.error, 'show_not_sendable');
+
+  const removedRecipient = await validateSendGroup(parsed, 'synthetic-token', {
+    now, listShows: async () => ({ shows: [show] }),
+    readRecipients: async () => ({ showId: show.showId, status: 'ready', show: recipientShow, expiresAtIso: show.contactsExpireAt, recipients: [] })
+  });
+  assert.equal(removedRecipient.error, 'recipient_group_changed');
+
+  const parallel = { ...show, showId: 'parallel-performance', location: 'Other synthetic venue' };
+  const selectedParallel = security.parseSendRequest({
+    group: {
+      name: 'Parallel performance recipients', list: [syntheticRecipient], kind: 'automatic', scope: 'show',
+      showId: parallel.showId, showStartsAt: parallel.startsAt, showEndsAt: parallel.endsAt,
+      showName: parallel.name, showLocation: parallel.location, deliveryType: parallel.deliveryType,
+      bookingDistinction: parallel.bookingDistinction, expiresAtIso: parallel.contactsExpireAt
+    }, templateId: 'template', requestId: '02bb5d84-2e59-4a8e-9d3d-e10c0731b751'
+  }, now);
+  const leakedSnapshot = await validateSendGroup(selectedParallel, 'synthetic-token', {
+    now, listShows: async () => ({ shows: [show, parallel] }),
+    readRecipients: async () => ({ showId: show.showId, status: 'ready', show: recipientShow, expiresAtIso: show.contactsExpireAt, recipients: [{ number: syntheticRecipient, reviewRequired: false }] })
+  });
+  assert.equal(leakedSnapshot.error, 'show_changed_during_read');
+
+  await assert.rejects(validateSendGroup(parsed, 'synthetic-token', {
+    now, listShows: async () => { throw new Error('synthetic Calendar outage'); },
+    readRecipients: async () => { throw new Error('must_not_read_when_calendar_is_unavailable'); }
+  }), /synthetic Calendar outage/);
+});
+
+test('show-scoped custom groups require current Summons show identity, while standalone lists require a short expiry', async () => {
+  const now = Date.parse('2026-11-19T12:00:00.000Z');
+  const syntheticRecipient = '+12025550100'; // Fiction-only 555-0100 range.
+  const show = {
+    showId: 'synthetic-calendar-event', name: 'Synthetic Jury Duty',
+    startsAt: '2026-11-20T19:00:00.000Z', endsAt: '2026-11-20T21:00:00.000Z',
+    contactsExpireAt: '2026-11-22T21:00:00.000Z', source: 'dmn',
+    deliveryType: 'private', bookingDistinction: 'Private DMN', status: 'ready', location: null
+  };
+  const custom = {
+    groupKind: 'custom', groupScope: 'show', showId: show.showId,
+    showStartsAt: show.startsAt, showEndsAt: show.endsAt, showName: show.name,
+    showLocation: null, deliveryType: show.deliveryType, bookingDistinction: show.bookingDistinction,
+    expiresAtIso: show.contactsExpireAt, recipients: [syntheticRecipient]
+  };
+  const allowed = await validateSendGroup(custom, 'token', {
+    now, listShows: async () => ({ shows: [show] }),
+    readRecipients: async () => { throw new Error('manual_lists_do_not_copy_contact_sources'); }
+  });
+  assert.equal(allowed.ok, true);
+  const invalidDestination = await validateSendGroup({ ...custom, recipients: [sender] }, 'token', {
+    now, listShows: async () => { throw new Error('invalid numbers must be rejected before source reads'); }
+  });
+  assert.equal(invalidDestination.error, 'recipient_number_invalid');
+
+  const moved = await validateSendGroup({ ...custom, showEndsAt: '2026-11-21T21:00:00.000Z' }, 'token', {
+    now, listShows: async () => ({ shows: [show] }), readRecipients: async () => { throw new Error('must_not_read'); }
+  });
+  assert.equal(moved.error, 'show_not_sendable');
+
+  const standalone = await validateSendGroup({ groupKind: 'custom', groupScope: 'standalone', showId: null, expiresAtIso: '2026-11-20T12:00:00.000Z', recipients: [syntheticRecipient] }, 'token', { now });
+  assert.equal(standalone.ok, true);
+  const tooLong = await validateSendGroup({ groupKind: 'custom', groupScope: 'standalone', showId: null, expiresAtIso: '2026-11-20T13:00:00.000Z', recipients: [syntheticRecipient] }, 'token', { now });
+  assert.equal(tooLong.error, 'standalone_expiry_invalid');
 });
 
 test('voice callbacks use only the configured HTTPS origin', () => {

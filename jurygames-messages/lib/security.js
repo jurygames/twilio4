@@ -64,7 +64,15 @@ function parseRecipients(input) {
   return { ok: true, recipients: [...unique] };
 }
 
-function parseSendRequest(body) {
+function canonicalExpiry(value) {
+  if (typeof value !== 'string') return null;
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return null;
+  try { return new Date(timestamp).toISOString() === value ? timestamp : null; }
+  catch { return null; }
+}
+
+function parseSendRequest(body, now = Date.now()) {
   const group = body?.group;
   const templateId = typeof body?.templateId === 'string' ? body.templateId : '';
   const requestId = body?.requestId;
@@ -73,7 +81,52 @@ function parseSendRequest(body) {
   }
   const parsed = parseRecipients(group.list);
   if (!parsed.ok) return parsed;
-  return { ok: true, requestId, templateId, groupName: group.name.trim(), recipients: parsed.recipients };
+  if (!['automatic', 'custom'].includes(group.kind) || !['show', 'standalone'].includes(group.scope)) {
+    return { ok: false, error: 'send_group_scope_invalid' };
+  }
+  const expiresAt = canonicalExpiry(group.expiresAtIso);
+  if (!expiresAt || expiresAt <= now) return { ok: false, error: 'send_group_expiry_invalid' };
+  const showId = group.showId;
+  const showStartsAt = group.showStartsAt;
+  const showEndsAt = group.showEndsAt;
+  const showName = group.showName;
+  const showLocation = group.showLocation;
+  const deliveryType = group.deliveryType;
+  const bookingDistinction = group.bookingDistinction;
+  if (group.scope === 'show') {
+    if (typeof showId !== 'string' || !showId.trim() || showId.length > 256) return { ok: false, error: 'show_id_required' };
+    if (!canonicalExpiry(showStartsAt) || !canonicalExpiry(showEndsAt) || Date.parse(showEndsAt) <= Date.parse(showStartsAt)) {
+      return { ok: false, error: 'show_time_identity_invalid' };
+    }
+    if (typeof showName !== 'string' || !showName.trim() || showName.length > 120 ||
+        (showLocation !== undefined && showLocation !== null && (typeof showLocation !== 'string' || showLocation.length > 500)) ||
+        !['private', 'public', 'direct_booking', 'unknown'].includes(deliveryType) ||
+        !['Private DMN', 'Public DMN', 'Direct booking', 'DMN booking'].includes(bookingDistinction)) {
+      return { ok: false, error: 'show_identity_invalid' };
+    }
+  } else {
+    if (group.kind !== 'custom' || (showId !== undefined && showId !== null && showId !== '') || expiresAt > now + 24 * 60 * 60 * 1000) {
+      return { ok: false, error: 'standalone_expiry_invalid' };
+    }
+  }
+  if (group.scope === 'show' && group.kind === 'automatic' && !showId) return { ok: false, error: 'show_id_required' };
+  return {
+    ok: true,
+    requestId,
+    templateId,
+    groupName: group.name.trim(),
+    groupKind: group.kind,
+    groupScope: group.scope,
+    showId: group.scope === 'show' ? showId.trim() : null,
+    showStartsAt: group.scope === 'show' ? showStartsAt : null,
+    showEndsAt: group.scope === 'show' ? showEndsAt : null,
+    showName: group.scope === 'show' ? showName.trim() : null,
+    showLocation: group.scope === 'show' ? (showLocation || null) : null,
+    deliveryType: group.scope === 'show' ? deliveryType : null,
+    bookingDistinction: group.scope === 'show' ? bookingDistinction : null,
+    expiresAtIso: group.expiresAtIso,
+    recipients: parsed.recipients
+  };
 }
 
 function allowedSenders(env = process.env) {
@@ -231,18 +284,39 @@ function createSignedReviewToken(input, purpose, consentAcknowledged, env = proc
       typeof input?.actorId !== 'string' || !input.actorId || !isUuid(input.requestId) ||
       typeof input.templateId !== 'string' || !input.templateId ||
       typeof input.groupName !== 'string' || !input.groupName.trim() ||
+      !['automatic', 'custom'].includes(input.groupKind) || !['show', 'standalone'].includes(input.groupScope) ||
+      !canonicalExpiry(input.expiresAtIso) || canonicalExpiry(input.expiresAtIso) <= now ||
+      (input.groupScope === 'show' && (typeof input.showId !== 'string' || !input.showId.trim() || input.showId.length > 256)) ||
+      (input.groupScope === 'show' && (!canonicalExpiry(input.showStartsAt) || !canonicalExpiry(input.showEndsAt) ||
+        Date.parse(input.showEndsAt) <= Date.parse(input.showStartsAt))) ||
+      (input.groupScope === 'show' && (typeof input.showName !== 'string' || !input.showName.trim() || input.showName.length > 120 ||
+        (input.showLocation !== null && input.showLocation !== undefined && (typeof input.showLocation !== 'string' || input.showLocation.length > 500)) ||
+        !['private', 'public', 'direct_booking', 'unknown'].includes(input.deliveryType) ||
+        !['Private DMN', 'Public DMN', 'Direct booking', 'DMN booking'].includes(input.bookingDistinction))) ||
+      (input.groupScope === 'standalone' && (input.groupKind !== 'custom' || (input.showId !== null && input.showId !== undefined) ||
+        Date.parse(input.expiresAtIso) > now + 24 * 60 * 60 * 1000)) ||
       input.consentAcknowledged !== consentAcknowledged ||
       !Array.isArray(input.recipients) || input.recipients.length < 1 || input.recipients.length > MAX_RECIPIENTS ||
       input.recipients.some((recipient) => !isValidE164(recipient)) || typeof input.resolvedFrom !== 'string' ||
       !isValidE164(input.resolvedFrom) || !input.template || typeof input.template !== 'object') return null;
 
   const payload = {
-    version: 1,
+    version: 2,
     purpose,
     actorId: input.actorId,
     requestId: input.requestId,
     templateId: input.templateId,
     groupName: input.groupName.trim(),
+    groupKind: input.groupKind,
+    groupScope: input.groupScope,
+    showId: input.groupScope === 'show' ? input.showId.trim() : null,
+    showStartsAt: input.groupScope === 'show' ? input.showStartsAt : null,
+    showEndsAt: input.groupScope === 'show' ? input.showEndsAt : null,
+    showName: input.groupScope === 'show' ? input.showName.trim() : null,
+    showLocation: input.groupScope === 'show' ? (input.showLocation || null) : null,
+    deliveryType: input.groupScope === 'show' ? input.deliveryType : null,
+    bookingDistinction: input.groupScope === 'show' ? input.bookingDistinction : null,
+    expiresAtIso: input.expiresAtIso,
     consentAcknowledged,
     recipientFingerprint: recipientFingerprint(secret, input.recipients),
     templateFingerprint: templateFingerprint(input.template),
@@ -278,8 +352,16 @@ function verifyReviewToken(token, expected, purpose, consentAcknowledged, env = 
   let payload;
   try { payload = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8')); }
   catch { return false; }
-  return payload?.version === 1 && payload.purpose === purpose && payload.actorId === expected.actorId && payload.requestId === expected.requestId &&
+  return payload?.version === 2 && payload.purpose === purpose && payload.actorId === expected.actorId && payload.requestId === expected.requestId &&
     payload.templateId === expected.templateId && payload.groupName === expected.groupName?.trim() &&
+    payload.groupKind === expected.groupKind && payload.groupScope === expected.groupScope &&
+    payload.showId === (expected.groupScope === 'show' ? expected.showId : null) && payload.expiresAtIso === expected.expiresAtIso &&
+    payload.showStartsAt === (expected.groupScope === 'show' ? expected.showStartsAt : null) &&
+    payload.showEndsAt === (expected.groupScope === 'show' ? expected.showEndsAt : null) &&
+    payload.showName === (expected.groupScope === 'show' ? expected.showName : null) &&
+    payload.showLocation === (expected.groupScope === 'show' ? (expected.showLocation || null) : null) &&
+    payload.deliveryType === (expected.groupScope === 'show' ? expected.deliveryType : null) &&
+    payload.bookingDistinction === (expected.groupScope === 'show' ? expected.bookingDistinction : null) &&
     payload.consentAcknowledged === consentAcknowledged && expected.consentAcknowledged === consentAcknowledged &&
     payload.resolvedFrom === expected.resolvedFrom && Number.isSafeInteger(payload.expiresAt) &&
     payload.expiresAt > now && payload.expiresAt <= now + APPROVAL_TTL_MS &&
