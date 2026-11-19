@@ -1,6 +1,5 @@
 // pages/api/templates/index.js
-import { getServiceSupabaseClient } from '../../../lib/supabaseClient';
-import { requireMessagingRole } from '../../../lib/messagingAuth';
+import { requireMessagingRole, messagingUserClient } from '../../../lib/messagingAuth';
 import security from '../../../lib/security';
 
 const { allowedSenders, isTrustedMutation, validateTemplateDraft } = security;
@@ -29,8 +28,8 @@ export default async function handler(req, res) {
     const session = await requireMessagingRole(req, res, 'operator');
     if (!session) return;
     try {
-      const { data, error } = await getServiceSupabaseClient()
-        .from('templates')
+      const { data, error } = await messagingUserClient(session)
+        .from('jg_messaging_templates')
         .select('*')
         .order('name', { ascending: true });
       if (error) return res.status(503).json({ error: 'template_store_unavailable' });
@@ -46,8 +45,8 @@ export default async function handler(req, res) {
     const checked = validateTemplateDraft(req.body);
     if (!checked.ok) return res.status(400).json({ error: checked.error });
     try {
-      const { data, error } = await getServiceSupabaseClient()
-        .from('templates')
+      const { data, error } = await messagingUserClient(session)
+        .from('jg_messaging_templates')
         .insert([checked.template])
         .select('*')
         .single();

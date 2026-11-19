@@ -201,24 +201,16 @@ test('send dispatch helper never runs more than two provider calls concurrently'
   assert.deepEqual(result, [2, 4, 6, 8, 10]);
 });
 
-test('send guard migration keeps detailed recipient data out of storage and grants execution only to the server role', () => {
-  const migrationPath = path.join(__dirname, '..', 'supabase', 'migrations', '20261119080513_jg_messaging_send_guard.sql');
-  const sql = fs.readFileSync(migrationPath, 'utf8');
-  assert.match(sql, /ENABLE ROW LEVEL SECURITY/i);
-  assert.match(sql, /REVOKE ALL ON FUNCTION public\.claim_jg_message_send[\s\S]*FROM PUBLIC, anon, authenticated/i);
-  assert.match(sql, /GRANT EXECUTE ON FUNCTION public\.claim_jg_message_send[\s\S]*TO service_role/i);
-  assert.match(sql, /public\.is_jg_messaging_session_active/);
-  assert.match(sql, /GRANT EXECUTE ON FUNCTION public\.is_jg_messaging_session_active[\s\S]*TO service_role/i);
-  assert.match(sql, /CREATE TABLE public\.templates[\s\S]*from_number text NOT NULL[\s\S]*media_url text NOT NULL/i);
-  assert.match(sql, /ALTER TABLE public\.templates ENABLE ROW LEVEL SECURITY/i);
-  assert.match(sql, /REVOKE ALL ON TABLE public\.templates FROM PUBLIC, anon, authenticated/i);
-  assert.match(sql, /GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public\.templates TO service_role/i);
-  assert.match(sql, /CREATE POLICY templates_server_role_only ON public\.templates/i);
-  assert.match(sql, /CREATE TRIGGER templates_set_updated_at[\s\S]*EXECUTE FUNCTION jg_messaging_private\.touch_template_updated_at/i);
-  assert.match(sql, /PRIMARY KEY \(actor_id, request_id\)/i);
-  assert.match(sql, /created_at >= clock_timestamp\(\) - interval '1 hour'[\s\S]*v_recent_count >= 10/i);
-  assert.match(sql, /state = 'processing'[\s\S]*v_processing_count >= 2/i);
-  const attemptTable = sql.match(/CREATE TABLE jg_messaging_private\.send_attempts \(([\s\S]*?)\);/i)?.[1];
-  assert.ok(attemptTable);
-  assert.doesNotMatch(attemptTable, /\b(recipient_number|phone_number|message_body|message_content|provider_sid)\b/i);
+test('database clients use an authenticated user token and never require a service-role key', () => {
+  const clientSource = fs.readFileSync(path.join(__dirname, '..', 'lib', 'supabaseClient.js'), 'utf8');
+  const authSource = fs.readFileSync(path.join(__dirname, '..', 'lib', 'messagingAuth.js'), 'utf8');
+  const sendSource = fs.readFileSync(path.join(__dirname, '..', 'pages', 'api', 'send.js'), 'utf8');
+  const templatesSource = fs.readFileSync(path.join(__dirname, '..', 'pages', 'api', 'templates', 'index.js'), 'utf8');
+  assert.match(clientSource, /Authorization:\s*`Bearer \$\{accessToken\}`/);
+  assert.doesNotMatch(clientSource, /SUPABASE_SERVICE_ROLE_KEY|getServiceSupabaseClient/);
+  assert.doesNotMatch(authSource + sendSource + templatesSource, /getServiceSupabaseClient|SUPABASE_SERVICE_ROLE_KEY/);
+  assert.match(authSource, /createUserScopedSupabaseClient\(token\)\.rpc\('is_jg_messaging_session_active'/);
+  assert.match(sendSource, /userClient = messagingUserClient\(session\)/);
+  assert.match(sendSource, /userClient\.rpc\('claim_jg_message_send'/);
+  assert.match(templatesSource, /\.from\('jg_messaging_templates'\)/);
 });

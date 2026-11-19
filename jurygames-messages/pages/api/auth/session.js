@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { createAuthSupabaseClient, getServiceSupabaseClient } from '../../../lib/supabaseClient';
+import { createAuthSupabaseClient, createUserScopedSupabaseClient } from '../../../lib/supabaseClient';
 import { currentMessagingUser } from '../../../lib/messagingAuth';
 import security from '../../../lib/security';
 
@@ -62,7 +62,7 @@ export default async function handler(req, res) {
           typeof refreshToken !== 'string' || refreshToken.length > 4096 || !sessionId || !expiresAt) {
         return res.status(401).json({ error: 'sign_in_failed' });
       }
-      const { data: active, error: sessionError } = await getServiceSupabaseClient().rpc('is_jg_messaging_session_active', {
+      const { data: active, error: sessionError } = await createUserScopedSupabaseClient(token).rpc('is_jg_messaging_session_active', {
         p_user_id: data.user.id,
         p_session_id: sessionId,
       });

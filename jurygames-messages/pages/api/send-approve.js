@@ -1,5 +1,4 @@
-import { getServiceSupabaseClient } from '../../lib/supabaseClient';
-import { requireMessagingRole } from '../../lib/messagingAuth';
+import { requireMessagingRole, messagingUserClient } from '../../lib/messagingAuth';
 import { resolveVoiceFrom } from '../../lib/resolveVoiceFrom';
 import security from '../../lib/security';
 
@@ -24,8 +23,8 @@ export default async function handler(req, res) {
   if (!parsedRequest.ok) return res.status(400).json({ error: parsedRequest.error });
 
   try {
-    const { data: template, error } = await getServiceSupabaseClient()
-      .from('templates')
+    const { data: template, error } = await messagingUserClient(session)
+      .from('jg_messaging_templates')
       .select('*')
       .eq('id', parsedRequest.templateId)
       .maybeSingle();

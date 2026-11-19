@@ -10,7 +10,6 @@ Server-side runtime configuration:
 
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY` — server only; never expose it with a `NEXT_PUBLIC_` variable
 - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`
 - `DEFAULT_FROM_NUMBER_UK`, `DEFAULT_FROM_NUMBER_UK_ALT`, `DEFAULT_FROM_NUMBER_US` or `TWILIO_ALLOWED_FROM_NUMBERS`
 - `TWILIO_ALLOWED_MEDIA_HOSTS` for call audio URLs
@@ -21,9 +20,9 @@ Server-side runtime configuration:
 
 ## Sending safeguards
 
-Sending is denied unless all three messaging flags are explicitly set to `true`, the approval secret is configured, and the short-lived preview approval is valid. Keep the flags disabled until the consent and opt-out review is complete, manual-list retention is approved, the Twilio-only send-guard database functions are installed, and the callback route can receive Twilio requests while preserving signature verification. Voice calls additionally require `TWILIO_CALLBACK_INGRESS_READY=true` after the narrow signed callback path is verified; do not disable broad Vercel SSO protection. Operators must review the server-loaded template and explicitly acknowledge recipient eligibility; the signed two-minute approval binds the operator, template, sender, group, and normalized recipient set. The send endpoint accepts only E.164 recipient strings, caps each request at 50 unique numbers, allows up to 10 send attempts per operator per hour, limits provider concurrency to two and requires a per-request idempotency key. Missing guard functions fail closed. Twilio acceptance is reported separately from delivery.
+Sending is denied unless all three messaging flags are explicitly set to `true`, the approval secret is configured, and the short-lived preview approval is valid. Keep the flags disabled until the consent and opt-out review is complete, manual-list retention is approved, the Summons messaging migration is installed, and the callback route can receive Twilio requests while preserving signature verification. Voice calls additionally require `TWILIO_CALLBACK_INGRESS_READY=true` after the narrow signed callback path is verified; do not disable broad Vercel SSO protection. Operators must review the server-loaded template and explicitly acknowledge recipient eligibility; the signed two-minute approval binds the operator, template, sender, group, and normalized recipient set. The send endpoint accepts only E.164 recipient strings, caps each request at 50 unique numbers, allows up to 10 send attempts per operator per hour, limits provider concurrency to two and requires a per-request idempotency key. Missing guard functions fail closed. Twilio acceptance is reported separately from delivery.
 
-The send-guard database belongs to Twilio4. Do not install its schema in Summons. Template and send APIs use a server-only Supabase service key after checking the signed-in user's current role. The public health route returns liveness only and reads no database rows.
+Templates and aggregate send outcomes live in Summons. Every Twilio4 database request uses the signed-in user's short-lived access token and the public anon key; Summons RLS limits operators to reading templates and their own send status, and reserves template edits for admins. Twilio4 must not receive a Summons service-role key. Recipient lists continue to come from the existing Summons contact lifecycle and are not copied into messaging tables or browser storage. The public health route returns liveness only and reads no database rows.
 
 ## Development
 

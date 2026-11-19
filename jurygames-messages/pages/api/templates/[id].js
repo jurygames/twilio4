@@ -1,6 +1,5 @@
 // pages/api/templates/[id].js
-import { getServiceSupabaseClient } from '../../../lib/supabaseClient';
-import { requireMessagingRole } from '../../../lib/messagingAuth';
+import { requireMessagingRole, messagingUserClient } from '../../../lib/messagingAuth';
 import security from '../../../lib/security';
 
 const { isTrustedMutation, validateTemplateDraft } = security;
@@ -33,13 +32,13 @@ export default async function handler(req, res) {
     if (!session) return;
     if (!isTrustedMutation(req)) return res.status(403).json({ error: 'same_origin_required' });
     try {
-      const client = getServiceSupabaseClient();
-      const current = await client.from('templates').select('*').eq('id', id).maybeSingle();
+      const client = messagingUserClient(session);
+      const current = await client.from('jg_messaging_templates').select('*').eq('id', id).maybeSingle();
       if (current.error) return res.status(503).json({ error: 'template_store_unavailable' });
       if (!current.data) return res.status(404).json({ error: 'template_not_found' });
       const checked = validateTemplateDraft(req.body, process.env, templateForValidation(current.data));
       if (!checked.ok) return res.status(400).json({ error: checked.error });
-      const { data, error } = await client.from('templates').update(checked.template).eq('id', id).select('*').single();
+      const { data, error } = await client.from('jg_messaging_templates').update(checked.template).eq('id', id).select('*').single();
       if (error) return res.status(503).json({ error: 'template_store_unavailable' });
       return res.status(200).json(templateForClient(data));
     } catch {
@@ -51,7 +50,7 @@ export default async function handler(req, res) {
     if (!session) return;
     if (!isTrustedMutation(req)) return res.status(403).json({ error: 'same_origin_required' });
     try {
-      const { error } = await getServiceSupabaseClient().from('templates').delete().eq('id', id);
+      const { error } = await messagingUserClient(session).from('jg_messaging_templates').delete().eq('id', id);
       if (error) return res.status(503).json({ error: 'template_store_unavailable' });
       return res.status(204).end();
     } catch {

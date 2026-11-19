@@ -1,7 +1,6 @@
 import { sendSMS, sendWhatsApp, makeCall } from '../../lib/twilioClient';
 import { resolveVoiceFrom } from '../../lib/resolveVoiceFrom';
-import { getServiceSupabaseClient } from '../../lib/supabaseClient';
-import { requireMessagingRole } from '../../lib/messagingAuth';
+import { requireMessagingRole, messagingUserClient } from '../../lib/messagingAuth';
 import security from '../../lib/security';
 
 const {
@@ -45,11 +44,11 @@ export default async function handler(req, res) {
   let callFrom;
   let statusCallback;
   let templateRecord;
-  let serviceClient;
+  let userClient;
   try {
-    serviceClient = getServiceSupabaseClient();
-    const { data: template, error } = await serviceClient
-      .from('templates')
+    userClient = messagingUserClient(session);
+    const { data: template, error } = await userClient
+      .from('jg_messaging_templates')
       .select('*')
       .eq('id', templateId)
       .maybeSingle();
@@ -85,7 +84,7 @@ export default async function handler(req, res) {
 
   let claim;
   try {
-    const { data, error } = await serviceClient.rpc('claim_jg_message_send', {
+    const { data, error } = await userClient.rpc('claim_jg_message_send', {
       p_actor_id: session.user.id,
       p_request_id: requestId,
       p_template_id: templateId,
@@ -126,7 +125,7 @@ export default async function handler(req, res) {
 
   const { acceptedCount, failedCount, providerStatuses } = summarizeProviderOutcomes(outcomes);
   try {
-    const { error } = await serviceClient.rpc('finish_jg_message_send', {
+    const { error } = await userClient.rpc('finish_jg_message_send', {
       p_actor_id: session.user.id,
       p_request_id: requestId,
       p_accepted_count: acceptedCount,

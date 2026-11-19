@@ -1,4 +1,4 @@
-import { getServiceSupabaseClient, getSupabaseClient } from './supabaseClient';
+import { createUserScopedSupabaseClient, getSupabaseClient } from './supabaseClient';
 import security from './security';
 
 const { createRoleGuard, parseCookie, roleForUser, sessionExpiresAt, sessionIdFromAccessToken, SESSION_COOKIE } = security;
@@ -16,7 +16,7 @@ export async function currentMessagingUser(req) {
   const sessionId = user ? sessionIdFromAccessToken(token, user.id) : null;
   const expiresAt = user ? sessionExpiresAt(token, user.id) : null;
   if (!user || !role || !sessionId || !expiresAt || expiresAt <= Date.now()) return null;
-  const { data: active, error: sessionError } = await getServiceSupabaseClient().rpc('is_jg_messaging_session_active', {
+  const { data: active, error: sessionError } = await createUserScopedSupabaseClient(token).rpc('is_jg_messaging_session_active', {
     p_user_id: user.id,
     p_session_id: sessionId,
   });
@@ -26,3 +26,8 @@ export async function currentMessagingUser(req) {
 }
 
 export const requireMessagingRole = createRoleGuard(currentMessagingUser);
+
+export function messagingUserClient(session) {
+  if (!session?.accessToken) throw new Error('messaging_session_required');
+  return createUserScopedSupabaseClient(session.accessToken);
+}
