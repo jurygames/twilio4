@@ -1,22 +1,35 @@
-
-// lib/twilioClient.js
 import Twilio from 'twilio';
-const client = Twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
-export const sendSMS = (to, from, body) => {
-  return client.messages.create({ to, from, body });
-};
+let client;
 
-export const sendWhatsApp = (to, from, body) => {
-  return client.messages.create({ to: 'whatsapp:' + to, from: 'whatsapp:' + from, body });
-};
+function getClient() {
+  if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN) {
+    throw new Error('twilio_not_configured');
+  }
+  if (!client) client = Twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+  return client;
+}
+
+export const sendSMS = (to, from, body) => getClient().messages.create({ to, from, body });
+
+export const sendWhatsApp = (to, from, body) => getClient().messages.create({
+  to: `whatsapp:${to}`,
+  from: `whatsapp:${from}`,
+  body,
+});
+
+function escapeXml(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;',
+  })[character]);
+}
 
 export const makeCall = async (to, from, mediaUrl, statusCallback) => {
-  const twiml = `<Response><Play>${mediaUrl}</Play></Response>`;
+  const twiml = `<Response><Play>${escapeXml(mediaUrl)}</Play></Response>`;
   const payload = { to, from, twiml };
   if (statusCallback) {
     payload.statusCallback = statusCallback;
     payload.statusCallbackEvent = ['initiated', 'ringing', 'answered', 'completed'];
   }
-  return client.calls.create(payload);
+  return getClient().calls.create(payload);
 };

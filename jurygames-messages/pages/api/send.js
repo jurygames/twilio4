@@ -1,105 +1,147 @@
-// pages/api/send.js
 import { sendSMS, sendWhatsApp, makeCall } from '../../lib/twilioClient';
-import { resolveAnyVoiceFrom } from '../../lib/resolveVoiceFrom';
+import { resolveVoiceFrom } from '../../lib/resolveVoiceFrom';
+import { getServiceSupabaseClient } from '../../lib/supabaseClient';
+import { requireMessagingRole } from '../../lib/messagingAuth';
+import security from '../../lib/security';
 
-function e164(n) {
-  if (!n) return '';
-  const trimmed = String(n).trim();
-  if (!trimmed) return '';
-  if (trimmed.startsWith('+')) {
-    const digits = trimmed.slice(1).replace(/\D/g, '');
-    return digits ? `+${digits}` : '';
-  }
-  const digits = trimmed.replace(/\D/g, '');
-  if (!digits) return '';
-  if (digits.startsWith('00')) return `+${digits.slice(2)}`;
-  if (digits.length === 11 && digits.startsWith('0')) return `+44${digits.slice(1)}`;
-  if (digits.length === 10) return `+1${digits}`;
-  return `+${digits}`;
+const {
+  canSend,
+  callbackUrl,
+  isNewSendClaim,
+  isTrustedMutation,
+  mapWithConcurrency,
+  parseSendRequest,
+  SEND_CONCURRENCY,
+  summarizeProviderOutcomes,
+  verifyApprovalToken,
+  validateTemplateForSend,
+} = security;
+
+export const config = { api: { bodyParser: { sizeLimit: '16kb' } } };
+
+function providerErrorCategory(error) {
+  const code = error && typeof error === 'object' ? String(error.code || '') : '';
+  return /^[A-Z0-9_-]{1,24}$/i.test(code) ? code : 'provider_error';
 }
 
 export default async function handler(req, res) {
+  res.setHeader('Cache-Control', 'no-store, private');
+  res.setHeader('Vary', 'Cookie');
   if (req.method !== 'POST') {
-    return res.status(405).json({ message: 'Method Not Allowed' });
+    res.setHeader('Allow', 'POST');
+    return res.status(405).json({ error: 'method_not_allowed' });
   }
+
+  const session = await requireMessagingRole(req, res, 'operator');
+  if (!session) return;
+  if (!isTrustedMutation(req)) return res.status(403).json({ error: 'same_origin_required' });
+  if (!canSend()) return res.status(503).json({ error: 'sending_disabled' });
+
+  const parsedRequest = parseSendRequest(req.body);
+  if (!parsedRequest.ok) return res.status(400).json({ error: parsedRequest.error });
+  const { requestId, templateId, groupName, recipients } = parsedRequest;
+
+  let prepared;
+  let callFrom;
+  let statusCallback;
+  let templateRecord;
+  let serviceClient;
   try {
-    const { group, template } = req.body;
-    if (!group || !Array.isArray(group.list) || !template) {
-      return res.status(400).json({ message: 'Invalid request body' });
+    serviceClient = getServiceSupabaseClient();
+    const { data: template, error } = await serviceClient
+      .from('templates')
+      .select('*')
+      .eq('id', templateId)
+      .maybeSingle();
+    if (error) return res.status(503).json({ error: 'template_store_unavailable' });
+    if (!template) return res.status(404).json({ error: 'template_not_found' });
+    templateRecord = template;
+    const checked = validateTemplateForSend(template);
+    if (!checked.ok) return res.status(400).json({ error: checked.error });
+    prepared = checked.template;
+    if (prepared.type === 'call') {
+      if (process.env.TWILIO_CALLBACK_INGRESS_READY !== 'true') return res.status(503).json({ error: 'callback_not_configured' });
+      statusCallback = callbackUrl('/api/voice/status');
+      if (!statusCallback) return res.status(503).json({ error: 'callback_not_configured' });
+      callFrom = await resolveVoiceFrom(prepared.from);
     }
-
-    // Normalize type and media keys
-    let { type, content } = template;
-    const typeNorm = String(type || '').toLowerCase();
-    const mediaUrl = template.mediaUrl ?? template.mp3Url ?? template.media_url ?? template.url ?? null;
-
-    let successCount = 0;
-    const errors = [];
-    const successes = [];
-
-    // Resolve 'from' across common keys
-    const fromRaw = template.from ?? template.from_number ?? template.fromNumber ?? template.sender ?? null;
-    const fromE164 = e164(fromRaw);
-    if (!fromE164) {
-      return res.status(400).json({ message: `Template '${template.name || 'unknown'}' is missing a valid 'from' number` });
-    }
-
-    console.log('SEND_DIAG', { type, typeNorm, fromRaw, fromE164, hasMedia: !!mediaUrl });
-
-    let callFrom = fromE164;
-    let statusCallback;
-    if (typeNorm === 'call') {
-      callFrom = await resolveAnyVoiceFrom(fromE164);
-      const base = String(process.env.PUBLIC_BASE_URL || '').trim().replace(/\/+$/, '');
-      statusCallback = /^https?:\/\//i.test(base) ? `${base}/api/voice/status` : undefined;
-      if (!statusCallback) {
-        console.warn('SEND_DIAG: PUBLIC_BASE_URL missing/invalid; voice status callbacks disabled');
-      }
-    }
-
-    await Promise.all(
-      group.list.map(async (toRaw) => {
-        const to = e164(toRaw);
-        if (!to) {
-          errors.push({ to: toRaw, error: 'Invalid recipient number' });
-          return;
-        }
-        try {
-          if (typeNorm === 'sms') {
-            const r = await sendSMS(to, fromE164, content);
-            successes.push({ to, sid: r.sid });
-          } else if (typeNorm === 'whatsapp') {
-            const r = await sendWhatsApp(to, fromE164, content);
-            successes.push({ to, sid: r.sid });
-          } else if (typeNorm === 'call') {
-            if (!mediaUrl) throw new Error('Call template missing mediaUrl');
-            const r = await makeCall(to, callFrom, mediaUrl, statusCallback);
-            successes.push({ to, sid: r.sid });
-          } else {
-            throw new Error(`Unsupported message type: ${type}`);
-          }
-          successCount++;
-        } catch (err) {
-          errors.push({ to, error: err.message });
-        }
-      })
-    );
-
-    const errorCount = errors.length;
-    const responseStatus = successCount === 0 ? 400 : (errorCount > 0 ? 207 : 200);
-
-    return res.status(responseStatus).json({
-      diag: {
-        route: typeNorm,
-        fromRequested: fromE164,
-        fromUsed: typeNorm === 'call' ? callFrom : fromE164,
-        mediaUrlUsed: mediaUrl
-      },
-      message: `${successCount} ${type || typeNorm}${successCount !== 1 ? 's' : ''} sent${errorCount ? `, ${errorCount} failed` : ''}`,
-      successes,
-      errors,
-    });
-  } catch (err) {
-    return res.status(500).json({ message: err.message });
+  } catch {
+    return res.status(503).json({ error: 'messaging_configuration_unavailable' });
   }
+
+  const resolvedFrom = prepared.type === 'call' ? callFrom : prepared.from;
+  if (!verifyApprovalToken(req.body?.approvalToken, {
+    actorId: session.user.id,
+    requestId,
+    templateId,
+    groupName,
+    recipients,
+    template: templateRecord,
+    resolvedFrom,
+    consentAcknowledged: req.body?.consentAcknowledged === true,
+  })) {
+    return res.status(409).json({ error: 'approval_expired_or_mismatched' });
+  }
+
+  let claim;
+  try {
+    const { data, error } = await serviceClient.rpc('claim_jg_message_send', {
+      p_actor_id: session.user.id,
+      p_request_id: requestId,
+      p_template_id: templateId,
+      p_recipient_count: recipients.length,
+    });
+    if (error?.message === 'messaging_rate_limited') return res.status(429).json({ error: 'send_rate_limited' });
+    if (error?.message === 'messaging_concurrency_limited') return res.status(429).json({ error: 'send_concurrency_limited' });
+    if (error) return res.status(503).json({ error: 'send_guard_unavailable' });
+    claim = Array.isArray(data) ? data[0] : data;
+  } catch {
+    return res.status(503).json({ error: 'send_guard_unavailable' });
+  }
+  if (!isNewSendClaim(claim)) {
+    const status = ['processing', 'accepted', 'partial', 'failed'].includes(claim?.status) ? claim.status : 'unknown';
+    return res.status(409).json({
+      error: 'send_request_already_claimed',
+      status,
+      acceptedCount: Number.isInteger(claim?.accepted_count) ? claim.accepted_count : 0,
+      failedCount: Number.isInteger(claim?.failed_count) ? claim.failed_count : 0,
+      providerStatuses: claim?.provider_statuses && typeof claim.provider_statuses === 'object' ? claim.provider_statuses : {},
+      deliveryConfirmed: false,
+    });
+  }
+
+  const outcomes = await mapWithConcurrency(recipients, SEND_CONCURRENCY, async (to) => {
+    try {
+      let result;
+      if (prepared.type === 'sms') result = await sendSMS(to, prepared.from, prepared.content);
+      else if (prepared.type === 'whatsapp') result = await sendWhatsApp(to, prepared.from, prepared.content);
+      else result = await makeCall(to, callFrom, prepared.mediaUrl, statusCallback);
+      const rawStatus = result?.status ? String(result.status).toLowerCase() : 'accepted';
+      const providerStatus = /^[a-z0-9_-]{1,24}$/.test(rawStatus) ? rawStatus : 'unknown_status';
+      return { accepted: Boolean(result?.sid), providerStatus };
+    } catch (error) {
+      return { accepted: false, providerStatus: providerErrorCategory(error) };
+    }
+  });
+
+  const { acceptedCount, failedCount, providerStatuses } = summarizeProviderOutcomes(outcomes);
+  try {
+    const { error } = await serviceClient.rpc('finish_jg_message_send', {
+      p_actor_id: session.user.id,
+      p_request_id: requestId,
+      p_accepted_count: acceptedCount,
+      p_failed_count: failedCount,
+      p_provider_statuses: providerStatuses,
+    });
+    if (error) {
+      console.error(JSON.stringify({ tag: 'twilio-send-outcome', status: 'recording_failed', requestId }));
+      return res.status(503).json({ error: 'send_outcome_recording_failed', requestId });
+    }
+  } catch {
+    console.error(JSON.stringify({ tag: 'twilio-send-outcome', status: 'recording_failed', requestId }));
+    return res.status(503).json({ error: 'send_outcome_recording_failed', requestId });
+  }
+
+  console.log(JSON.stringify({ tag: 'twilio-send-outcome', status: failedCount ? (acceptedCount ? 'partial' : 'failed') : 'accepted', requestId, acceptedCount, failedCount }));
+  return res.status(200).json({ acceptedCount, failedCount, providerStatuses, deliveryConfirmed: false });
 }
