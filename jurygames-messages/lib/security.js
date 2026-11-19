@@ -10,11 +10,6 @@ const LOGIN_WINDOW_MS = 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 8;
 const loginBuckets = new Map();
 
-function roleForUser(user) {
-  const role = user?.app_metadata?.jurygames_messaging_role;
-  return role === 'admin' || role === 'operator' ? role : null;
-}
-
 function roleMeetsRequirement(role, requiredRole) {
   return role === 'admin' || (requiredRole === 'operator' && role === 'operator');
 }
@@ -374,7 +369,6 @@ module.exports = {
   SESSION_TTL_SECONDS,
   MAX_RECIPIENTS,
   SEND_CONCURRENCY,
-  roleForUser,
   roleMeetsRequirement,
   createRoleGuard,
   parseCookie,

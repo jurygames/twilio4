@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { createAuthSupabaseClient } from '../../../lib/supabaseClient';
-import { currentMessagingUser } from '../../../lib/messagingAuth';
+import { currentMessagingUser, resolveMessagingRole } from '../../../lib/messagingAuth';
 import security from '../../../lib/security';
 
 const {
@@ -12,7 +12,6 @@ const {
   isTrustedMutation,
   parseCookie,
   REFRESH_COOKIE,
-  roleForUser,
   sessionExpiresAt,
   SESSION_COOKIE,
   takeLoginAttempt,
@@ -52,9 +51,9 @@ export default async function handler(req, res) {
     }
     try {
       const { data, error } = await createAuthSupabaseClient().auth.signInWithPassword({ email, password });
-      const role = roleForUser(data?.user);
       const token = data?.session?.access_token;
       const refreshToken = data?.session?.refresh_token;
+      const role = typeof token === 'string' ? await resolveMessagingRole(token) : null;
       const expiresAt = data?.user && typeof token === 'string' ? sessionExpiresAt(token, data.user.id) : null;
       if (error || !role || typeof token !== 'string' || token.length > 4096 ||
           typeof refreshToken !== 'string' || refreshToken.length > 4096 || !expiresAt) {

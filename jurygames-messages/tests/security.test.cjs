@@ -7,11 +7,27 @@ const security = require('../lib/security');
 
 const sender = '+447700900123';
 
-test('only trusted app_metadata grants operator or admin access', () => {
-  assert.equal(security.roleForUser({ app_metadata: { jurygames_messaging_role: 'operator' } }), 'operator');
-  assert.equal(security.roleForUser({ app_metadata: { jurygames_messaging_role: 'admin' } }), 'admin');
-  assert.equal(security.roleForUser({ user_metadata: { jurygames_messaging_role: 'admin' } }), null);
-  assert.equal(security.roleForUser({ app_metadata: { jurygames_messaging_role: 'viewer' } }), null);
+test('operator access comes from the current Summons Defendant qualification, not metadata', async () => {
+  const { resolveMessagingRole } = await import('../lib/messagingAuth.js');
+  const calls = [];
+  const clientFactory = token => {
+    assert.equal(token, 'verified-access-token');
+    return { rpc: async name => {
+      calls.push(name);
+      return { data: 'operator', error: null };
+    } };
+  };
+  assert.equal(await resolveMessagingRole('verified-access-token', clientFactory), 'operator');
+  assert.deepEqual(calls, ['get_jg_messaging_role']);
+
+  const unqualified = await resolveMessagingRole('verified-access-token', () => ({
+    rpc: async () => ({ data: null, error: null })
+  }));
+  assert.equal(unqualified, null);
+  assert.equal(await resolveMessagingRole('', () => { throw new Error('must_not_connect'); }), null);
+  await assert.rejects(resolveMessagingRole('verified-access-token', () => ({
+    rpc: async () => ({ data: null, error: new Error('details are not exposed') })
+  })), /messaging_auth_unavailable/);
   assert.equal(security.roleMeetsRequirement('operator', 'admin'), false);
   assert.equal(security.roleMeetsRequirement('admin', 'operator'), true);
 });

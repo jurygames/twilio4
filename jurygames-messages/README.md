@@ -4,7 +4,7 @@ Next.js 15.5.28 Pages Router interface for approved SMS, WhatsApp and voice temp
 
 ## Access
 
-The browser does not contain an authentication password. Operators sign in through Supabase Auth. A trusted administrator must set `app_metadata.jurygames_messaging_role` to `operator` or `admin`; user-editable metadata is not accepted. Every protected request verifies the current Auth user and role with Supabase. The access cookie is `HttpOnly` and bounded to 15 minutes; the refresh cookie is also `HttpOnly`, expires with it, and is scoped to the sign-out endpoint. Sign out revokes the local Supabase refresh session. Operators can read templates and request sends. Admins can create, edit and delete templates.
+The browser does not contain an authentication password. Staff sign in through Summons Supabase Auth. Summons grants operator access from the live staff record: the account must be active, unsuspended, and currently qualified as a Defendant. The initial messaging admin is granted through trusted `app_metadata.jurygames_messaging_role`; user-editable metadata is not accepted. Twilio4 calls the protected `get_jg_messaging_role` RPC on each protected request, and RLS independently applies the same rules. The access cookie is `HttpOnly` and bounded to 15 minutes; the refresh cookie is also `HttpOnly`, expires with it, and is scoped to the sign-out endpoint. Sign out revokes the local Supabase refresh session. Operators can read templates and request sends. Admins can create, edit and delete templates.
 
 Server-side runtime configuration:
 
