@@ -209,8 +209,16 @@ test('send guard migration keeps detailed recipient data out of storage and gran
   assert.match(sql, /GRANT EXECUTE ON FUNCTION public\.claim_jg_message_send[\s\S]*TO service_role/i);
   assert.match(sql, /public\.is_jg_messaging_session_active/);
   assert.match(sql, /GRANT EXECUTE ON FUNCTION public\.is_jg_messaging_session_active[\s\S]*TO service_role/i);
+  assert.match(sql, /CREATE TABLE public\.templates[\s\S]*from_number text NOT NULL[\s\S]*media_url text NOT NULL/i);
+  assert.match(sql, /ALTER TABLE public\.templates ENABLE ROW LEVEL SECURITY/i);
+  assert.match(sql, /REVOKE ALL ON TABLE public\.templates FROM PUBLIC, anon, authenticated/i);
+  assert.match(sql, /GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public\.templates TO service_role/i);
+  assert.match(sql, /CREATE POLICY templates_server_role_only ON public\.templates/i);
+  assert.match(sql, /CREATE TRIGGER templates_set_updated_at[\s\S]*EXECUTE FUNCTION jg_messaging_private\.touch_template_updated_at/i);
   assert.match(sql, /PRIMARY KEY \(actor_id, request_id\)/i);
   assert.match(sql, /created_at >= clock_timestamp\(\) - interval '1 hour'[\s\S]*v_recent_count >= 10/i);
   assert.match(sql, /state = 'processing'[\s\S]*v_processing_count >= 2/i);
-  assert.doesNotMatch(sql, /\b(recipient_number|phone_number|message_body|message_content|media_url|provider_sid)\b/i);
+  const attemptTable = sql.match(/CREATE TABLE jg_messaging_private\.send_attempts \(([\s\S]*?)\);/i)?.[1];
+  assert.ok(attemptTable);
+  assert.doesNotMatch(attemptTable, /\b(recipient_number|phone_number|message_body|message_content|provider_sid)\b/i);
 });

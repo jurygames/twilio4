@@ -6,6 +6,43 @@ CREATE SCHEMA IF NOT EXISTS jg_messaging_private;
 REVOKE ALL ON SCHEMA jg_messaging_private FROM PUBLIC, anon, authenticated;
 GRANT USAGE ON SCHEMA jg_messaging_private TO service_role;
 
+-- Keep operational message templates in the dedicated Twilio4 project. The app
+-- accesses this table only through authenticated server routes using service_role.
+CREATE TABLE public.templates (
+  id text PRIMARY KEY DEFAULT gen_random_uuid()::text CHECK (length(id) BETWEEN 1 AND 128),
+  name text NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 120),
+  type text NOT NULL CHECK (type IN ('SMS', 'WhatsApp', 'Call')),
+  show text NOT NULL CHECK (length(trim(show)) BETWEEN 1 AND 120),
+  from_number text NOT NULL CHECK (from_number ~ '^\+[1-9][0-9]{7,14}$'),
+  content text NOT NULL DEFAULT '' CHECK (length(content) <= 1600),
+  media_url text NOT NULL DEFAULT '' CHECK (length(media_url) <= 2048),
+  summary text NOT NULL DEFAULT '' CHECK (length(summary) <= 500),
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+
+ALTER TABLE public.templates ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.templates FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.templates TO service_role;
+CREATE POLICY templates_server_role_only ON public.templates
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+CREATE FUNCTION jg_messaging_private.touch_template_updated_at()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $function$
+BEGIN
+  NEW.updated_at = clock_timestamp();
+  RETURN NEW;
+END;
+$function$;
+REVOKE ALL ON FUNCTION jg_messaging_private.touch_template_updated_at() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION jg_messaging_private.touch_template_updated_at() TO service_role;
+CREATE TRIGGER templates_set_updated_at
+  BEFORE UPDATE ON public.templates
+  FOR EACH ROW EXECUTE FUNCTION jg_messaging_private.touch_template_updated_at();
+
 CREATE TABLE jg_messaging_private.send_attempts (
   actor_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   request_id uuid NOT NULL,
