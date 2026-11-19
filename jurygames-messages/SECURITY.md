@@ -1,6 +1,6 @@
 # Phase 0 security audit
 
-This audit covers the Twilio4 app in `jurygames-messages/` and deployment metadata for the `twilio4-messages` Vercel project. Runtime routes could not be independently observed. No customer numbers, DMN transaction records, or Google Calendar event records were opened.
+This audit covers the Twilio4 app in `jurygames-messages/` and both Vercel projects associated with the repository. The `twilio4-messenger` production deployment references the audited `main` commit `b1b4f1b`; no customer numbers, DMN transaction records, or Google Calendar event records were opened.
 
 ## Application controls
 
@@ -15,11 +15,11 @@ This audit covers the Twilio4 app in `jurygames-messages/` and deployment metada
 
 ## Release gates
 
-- The production Vercel project has SSO protection enabled. The authenticated Vercel fetch returned 404 for the production aliases, so runtime behavior could not be independently observed. No browser-based production verification is claimed.
-- The Vercel environment inventory contains Twilio configuration but no Supabase Auth/database variables. The app therefore cannot sign operators in or load templates in that deployment until its intended Supabase project is identified and configured.
-- The connected Supabase projects are Summons and Summons Staging; neither is the Twilio4 database. The send-guard migration in this repository is not applied. Do not apply it to either Summons database. Before deployment, identify the isolated Twilio4 database, run the migration and security advisors there, and verify the template table's existing grants/RLS. Sending remains disabled until those checks and the consent/opt-out review pass.
+- Both `twilio4-messenger` and `twilio4-messages` have Vercel SSO enabled for production and previews. Safe authenticated GETs to `twilio4-messenger` returned 200 for `/api/health` and `/api/templates` (23 template records; values suppressed). The deployed source has no app-level authentication on those APIs, so Vercel SSO is its current outer boundary. No send or call endpoint was invoked.
+- The `twilio4-messenger` production environment has `SUPABASE_URL`, `SUPABASE_ANON_KEY`, Twilio credentials, sender defaults, and `APP_ENV`, but no service-role key or messaging safety flags. Its Supabase URL identifies project `weysvdiibhmcdlaaciog`; both connected Supabase accounts deny access to that project, so template-table grants/RLS and production schema could not be audited. `twilio4-messages` has no Supabase variables and its production aliases returned 404.
+- The send-guard migration in this repository is not applied. Do not apply it to Summons or Summons Staging. Before deployment, grant access to the isolated Twilio4 database, inspect the template table's grants/RLS, run the migration and security advisors there, and configure the new server-only Supabase keys. Sending remains disabled until those checks and the consent/opt-out review pass.
 - Vercel SSO also protects the production callback path. A signed Twilio callback needs a narrowly scoped reachable ingress. Do not disable broad SSO protection to make callbacks work.
 - The Summons MCP foundation is a separate, unmerged, disabled, read-only implementation. Its current six tools omit customer contacts and messaging, and all write capabilities remain unimplemented. This phase adds no MCP send or contact tool. The MCP staging OAuth handshake is not yet validated end to end.
 - Two browser-only password literals were found only in their original UI files in the indexed Jury Games source and are removed here. They were not server credentials in this app; no other indexed source reuse was found.
 
-Do not enable `MESSAGING_SEND_ENABLED` or `MESSAGING_CONSENT_REVIEWED` until the database and deployment gates above are closed. Do not add Summons contact data to Twilio4 until the MCP/service boundary and authoritative 48-hour retention behavior have been reviewed in a separate change.
+Do not enable `MESSAGING_SEND_ENABLED`, `MESSAGING_CONSENT_REVIEWED`, or `MESSAGING_MANUAL_LISTS_REVIEWED` until the database and deployment gates above are closed. Do not add Summons contact data to Twilio4 until the MCP/service boundary and authoritative 48-hour retention behavior have been reviewed in a separate change.
