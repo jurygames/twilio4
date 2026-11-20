@@ -167,6 +167,7 @@ function validateTemplateForSend(template, env = process.env) {
   if (!template || typeof template !== 'object') return { ok: false, error: 'template_invalid' };
   const type = String(template.type || '').trim().toLowerCase();
   if (!['sms', 'whatsapp', 'call'].includes(type)) return { ok: false, error: 'template_type_invalid' };
+  if (type === 'whatsapp') return { ok: false, error: 'whatsapp_content_template_required' };
   const from = template.from_number ?? template.from ?? template.fromNumber ?? template.sender;
   if (!isValidE164(from) || !allowedSenders(env).includes(from)) return { ok: false, error: 'template_sender_not_allowed' };
   const content = typeof template.content === 'string' ? template.content : '';
@@ -190,6 +191,7 @@ function validateTemplateDraft(input, env = process.env, existing = {}) {
   const summary = typeof merged.summary === 'string' ? merged.summary : '';
   if (!name || name.length > 120 || !show || show.length > 120) return { ok: false, error: 'template_name_or_show_invalid' };
   if (!['sms', 'whatsapp', 'call'].includes(type)) return { ok: false, error: 'template_type_invalid' };
+  if (type === 'whatsapp') return { ok: false, error: 'whatsapp_content_template_required' };
   if (!isValidE164(from) || !allowedSenders(env).includes(from)) return { ok: false, error: 'template_sender_not_allowed' };
   if (content.length > 1600 || summary.length > 500) return { ok: false, error: 'template_content_invalid' };
   if (type === 'call' && mediaUrl && !isAllowedMediaUrl(mediaUrl, env)) return { ok: false, error: 'template_media_not_allowed' };

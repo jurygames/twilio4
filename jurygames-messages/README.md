@@ -21,11 +21,15 @@ Server-side runtime configuration:
 
 ## Sending safeguards
 
-Sending is denied unless all three messaging flags are explicitly set to `true`, the approval secret is configured, and the short-lived preview approval is valid. Keep the flags disabled until the consent and opt-out review is complete, manual-list retention is approved, the Summons messaging migration is installed, and the callback route can receive Twilio requests while preserving signature verification. Voice calls additionally require `TWILIO_CALLBACK_INGRESS_READY=true` after the narrow signed callback path is verified; do not disable broad Vercel SSO protection. Operators must review the server-loaded template and explicitly acknowledge recipient eligibility; the signed two-minute approval binds the operator, template, sender, group, and normalized recipient set. The send endpoint accepts only E.164 recipient strings, caps each request at 50 unique numbers, allows up to 10 send attempts per operator per hour, limits provider concurrency to two and requires a per-request idempotency key. Missing guard functions fail closed. Twilio acceptance is reported separately from delivery.
+Production SMS and voice sending is enabled only after the consent review, manual-list retention review, and signed callback ingress checks. Every send still requires a server-loaded template, an exact Summons show and current contacts, a short-lived per-send approval, operator confirmation of recipient eligibility, a per-request idempotency key, and the bounded rate/concurrency safeguards. WhatsApp remains blocked until the application stores and verifies a WhatsApp-approved Twilio Content SID and registered sender; outbound WhatsApp never falls back to free-form message bodies. Twilio acceptance is reported separately from delivery.
 
 Templates and aggregate send outcomes live in Summons. Every Twilio4 database/API request uses the signed-in user's short-lived access token and the public anon key; Summons RLS limits operators to reading templates and their own send status, and reserves template edits for admins. Twilio4 must not receive a Summons service-role key. Recipient lists come from the existing Summons contact lifecycle, are held in browser memory only, and are removed at their server-provided expiry. They are not written to local storage or a second recipient table. The public health route returns liveness only and reads no database rows.
 
 The intended unified Summons entry point is `/admin/messaging`. Vercel routes that path and the required Twilio4 assets/API paths through the `jury-games-messaging` microfrontend group after the child application is ready; Summons show/recipient reads remain on Summons routes. The child app keeps its own Supabase role checks and app session when opened through the Summons host.
+
+## WhatsApp outbound
+
+WhatsApp sends remain fail-closed until the app stores and validates a WhatsApp-approved Twilio Content SID and registered sender. A plain message body and recipient number are not enough for a business-initiated WhatsApp send; see [Twilio's Content API approval requirements](https://www.twilio.com/docs/content/content-api-resources).
 
 ## Development
 

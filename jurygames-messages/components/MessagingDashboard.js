@@ -4,6 +4,9 @@ import InternationalGroups from './InternationalGroups';
 import SendPanel from './SendPanel';
 import ShowTabs from './ShowTabs';
 import StatusPanel from './StatusPanel';
+import phoneNumbers from '../lib/phoneNumbers';
+
+const { groupInternationalRecipients } = phoneNumbers;
 
 function explainApiError(code) {
   if (code === 'authentication_required') return 'Your session expired. Sign in again.';

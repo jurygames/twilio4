@@ -270,11 +270,18 @@ test('partial provider outcomes are counted without returning recipient details'
 test('template senders and media are restricted to server configuration', () => {
   const env = { DEFAULT_FROM_NUMBER_UK: sender, TWILIO_ALLOWED_MEDIA_HOSTS: 'media.jurygames.test' };
   assert.equal(security.validateTemplateForSend({ type: 'SMS', from_number: sender, content: 'Hello' }, env).ok, true);
+  assert.equal(security.validateTemplateForSend({ type: 'WhatsApp', from_number: sender, content: 'Hello' }, env).error, 'whatsapp_content_template_required');
+  assert.equal(security.validateTemplateDraft({ name: 'x', type: 'WhatsApp', show: 'x', from_number: sender, content: 'Hello' }, env).error, 'whatsapp_content_template_required');
   assert.equal(security.validateTemplateForSend({ type: 'SMS', from_number: '+19995550123', content: 'Hello' }, env).error, 'template_sender_not_allowed');
   assert.equal(security.validateTemplateForSend({ type: 'Call', from_number: sender, media_url: 'https://media.jurygames.test/approved.mp3' }, env).ok, true);
   assert.equal(security.validateTemplateForSend({ type: 'Call', from_number: sender, media_url: 'https://evil.example/audio.mp3' }, env).error, 'template_media_not_allowed');
   assert.equal(security.validateTemplateForSend({ type: 'Call', from_number: sender, media_url: 'http://media.jurygames.test/audio.mp3' }, env).error, 'template_media_not_allowed');
   assert.equal(security.validateTemplateDraft({ name: 'x', type: 'SMS', show: 'x', from_number: sender, content: '', from: '+19995550123' }, env).error, 'template_field_invalid');
+});
+
+test('WhatsApp transport refuses free-form bodies until an approved Content SID path exists', async () => {
+  const { sendWhatsApp } = await import('../lib/twilioClient.js');
+  assert.throws(() => sendWhatsApp('+14155550123', sender, 'free-form body'), /whatsapp_content_template_required/);
 });
 
 test('sending remains disabled until every safety switch and the approval secret are configured', () => {
