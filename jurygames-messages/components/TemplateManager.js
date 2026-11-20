@@ -158,9 +158,10 @@ export default function TemplateManager() {
             onChange={e => updateLocal(idx, 'type', e.target.value)}
           >
             <option>SMS</option>
-            <option>WhatsApp</option>
+            <option disabled value="WhatsApp">WhatsApp — approved Twilio Content template required</option>
             <option>Call</option>
           </select>
+          <p className="mb-2 text-xs text-gray-400">WhatsApp outbound remains unavailable until an approved Twilio Content SID and sender are configured.</p>
           <select
             className="w-full p-2 bg-gray-900 rounded mb-2"
             value={tpl.from_number}

@@ -12,11 +12,11 @@ function getClient() {
 
 export const sendSMS = (to, from, body) => getClient().messages.create({ to, from, body });
 
-export const sendWhatsApp = (to, from, body) => getClient().messages.create({
-  to: `whatsapp:${to}`,
-  from: `whatsapp:${from}`,
-  body,
-});
+// Do not send free-form WhatsApp bodies. Outbound sends must be re-enabled
+// only with a Twilio Content SID verified as WhatsApp-approved.
+export const sendWhatsApp = () => {
+  throw new Error('whatsapp_content_template_required');
+};
 
 function escapeXml(value) {
   return String(value).replace(/[&<>"']/g, (character) => ({

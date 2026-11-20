@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
-import { groupInternationalRecipients } from '../lib/phoneNumbers';
+import phoneNumbers from '../lib/phoneNumbers';
+
+const { groupInternationalRecipients } = phoneNumbers;
 
 async function copyNumbers(numbers) {
   if (!Array.isArray(numbers) || !numbers.length || !navigator.clipboard?.writeText) return false;
