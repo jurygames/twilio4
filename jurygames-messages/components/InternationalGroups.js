@@ -15,7 +15,6 @@ async function copyNumbers(numbers) {
 
 function warningText(code) {
   const messages = {
-    consent_and_opt_out_not_recorded: 'Consent and opt-out evidence is not recorded.',
     some_contacts_have_no_number: 'Some contacts have no phone number.',
     some_contacts_need_identity_or_source_review: 'Some contacts need identity or source review.',
     retention_review_pending: 'A Summons contact-retention review is pending.',
@@ -44,6 +43,8 @@ export default function InternationalGroups({ snapshot, selectedShow, onUseGroup
 
   if (!snapshot) return null;
   const statusWarning = snapshot.status !== 'ready';
+  const visibleWarnings = (snapshot.warnings?.length ? snapshot.warnings : [snapshot.status])
+    .filter(code => code !== 'consent_and_opt_out_not_recorded');
   const expired = snapshot.status === 'expired';
   const unusable = ['cancelled', 'quarantined', 'expired', 'identity_review_required', 'source_unavailable', 'changed'].includes(snapshot.status);
 
@@ -58,8 +59,7 @@ export default function InternationalGroups({ snapshot, selectedShow, onUseGroup
         {snapshot.expiresAtIso ? <p className="text-xs text-gray-400">Contact list expires {new Date(snapshot.expiresAtIso).toLocaleString('en-GB', { timeZone: 'Europe/London' })} London time</p> : null}
       </div>
 
-      {statusWarning ? <p role="status" className="mb-3 rounded bg-amber-950 p-3 text-sm text-amber-200">{(snapshot.warnings?.length ? snapshot.warnings : [snapshot.status]).map(warningText).join(' ')}</p> : null}
-      {snapshot.consentStatus !== 'recorded' ? <p className="mb-3 rounded bg-amber-950 p-3 text-sm text-amber-200">Consent and opt-out evidence is not recorded. A number alone does not authorize SMS, WhatsApp, or calls.</p> : null}
+      {statusWarning && visibleWarnings.length ? <p role="status" className="mb-3 rounded bg-amber-950 p-3 text-sm text-amber-200">{visibleWarnings.map(warningText).join(' ')}</p> : null}
 
       {grouped.missingNumberCount > 0 ? <p className="mb-3 text-sm text-amber-200">Needs a number: {grouped.missingNumberCount} contact{grouped.missingNumberCount === 1 ? '' : 's'}.</p> : null}
 

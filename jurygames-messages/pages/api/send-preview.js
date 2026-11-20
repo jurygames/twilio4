@@ -36,8 +36,7 @@ export default async function handler(req, res) {
 
     let resolvedFrom = checked.template.from;
     const warnings = [
-      'Verify that this group matches the exact selected Summons performance and its current retention deadline.',
-      'Consent and opt-out evidence is not recorded here; every recipient requires a human eligibility review before approval.',
+      'Verify that this group matches the selected Summons performance and its current retention deadline.',
     ];
     let callbackReady = true;
     if (canSend() && checked.template.type === 'call') {

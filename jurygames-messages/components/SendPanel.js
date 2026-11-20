@@ -262,10 +262,10 @@ export default function SendPanel({ groups, selectedGroupId, onSelectGroup, sele
                 }}
                 className="mt-1"
               />
-              <span>I checked consent and opt-outs for this list, and confirmed it matches the intended show and retention window.</span>
+              <span>I confirmed the selected performance, recipient list, message, and any applicable opt-outs.</span>
             </label>
             <p className="mb-4 text-xs text-gray-500">Approval expires after two minutes and binds this exact list and template. Twilio acceptance does not confirm delivery.</p>
-            {!canSend || !pendingData.canApprove ? <p className="mb-4 text-sm text-amber-600">Sending is disabled until consent, manual-list, and safety checks are configured.</p> : null}
+            {!canSend || !pendingData.canApprove ? <p className="mb-4 text-sm text-amber-600">Sending is disabled until the messaging safety checks are configured.</p> : null}
             {pendingData.approvalToken ? <p className="mb-3 text-sm text-green-700">Preview approved; confirm to send.</p> : null}
             {status ? <p role="status" className="mb-3 text-sm">{status}</p> : null}
             <div className="flex justify-end space-x-2">
