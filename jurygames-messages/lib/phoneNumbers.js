@@ -27,8 +27,9 @@ function normalizePhoneNumber(input) {
 
   let phone;
   try {
-    // Deliberately omit defaultCountry: national-format values need human review.
-    phone = parsePhoneNumberFromString(original);
+    // Summons is operated in the UK, so national-format values without an
+    // international country prefix are interpreted as UK numbers.
+    phone = parsePhoneNumberFromString(original, 'GB');
   } catch {
     phone = undefined;
   }

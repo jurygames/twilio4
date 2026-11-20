@@ -36,7 +36,7 @@ test('operator access comes from the current Summons Defendant qualification, no
   assert.equal(security.roleMeetsRequirement('admin', 'operator'), true);
 });
 
-test('international phone normalization requires explicit international context and flags unresolved countries', () => {
+test('international phone normalization defaults national-format numbers to the UK and flags unresolved countries', () => {
   const uk = normalizePhoneNumber('+442070313000');
   assert.equal(uk.status, 'valid');
   assert.equal(uk.e164, '+442070313000');
@@ -44,10 +44,17 @@ test('international phone normalization requires explicit international context 
   assert.equal(uk.countryName, 'United Kingdom');
   assert.equal(Object.hasOwn(uk, 'original'), false, 'valid numbers need no stored correction copy');
 
-  const national = normalizePhoneNumber('020 7031 3000');
-  assert.equal(national.status, 'needs_review');
-  assert.equal(national.reason, 'invalid_number');
-  assert.equal(national.original, '020 7031 3000');
+  const nationalMobile = normalizePhoneNumber('07946000000');
+  assert.equal(nationalMobile.status, 'valid');
+  assert.equal(nationalMobile.e164, '+447946000000');
+  assert.equal(nationalMobile.callingCode, '+44');
+  assert.equal(nationalMobile.country, 'GB');
+  assert.equal(Object.hasOwn(nationalMobile, 'original'), false);
+
+  const nationalLandline = normalizePhoneNumber('020 7031 3000');
+  assert.equal(nationalLandline.status, 'valid');
+  assert.equal(nationalLandline.e164, '+442070313000');
+  assert.equal(nationalLandline.country, 'GB');
 
   const nonGeographic = normalizePhoneNumber('+80012345678');
   assert.equal(nonGeographic.status, 'needs_review');
@@ -78,8 +85,8 @@ test('shared calling codes group by code without claiming a unique country; dupl
   assert.equal(uk.count, 1);
   assert.equal(uk.label.includes('shared code (+44)'), true);
   assert.equal(grouped.missingNumberCount, 2);
-  assert.equal(grouped.needsReviewCount, 3);
-  assert.deepEqual(grouped.needsReview.map(item => item.reason).sort(), ['country_unresolved', 'invalid_number', 'source_review_required']);
+  assert.equal(grouped.needsReviewCount, 2);
+  assert.deepEqual(grouped.needsReview.map(item => item.reason).sort(), ['country_unresolved', 'source_review_required']);
   assert.equal(grouped.consentStatus, 'not_recorded');
 });
 
@@ -104,9 +111,13 @@ test('custom lists use authoritative show expiry or require a short standalone e
   assert.equal(Date.parse(standalone.group.expiresAtIso), now + 24 * 60 * 60 * 1000);
   assert.equal(standalone.group.showId, null);
 
-  const invalid = createCustomList({ name: 'Needs correction', numbers: '020 7031 3000', show }, now);
+  const national = createCustomList({ name: 'UK mobile', numbers: '07946000000', show }, now);
+  assert.equal(national.ok, true);
+  assert.deepEqual(national.group.list, ['+447946000000']);
+
+  const invalid = createCustomList({ name: 'Needs correction', numbers: 'not a phone', show }, now);
   assert.equal(invalid.error, 'numbers_need_review');
-  assert.equal(invalid.needsReview[0].original, '020 7031 3000');
+  assert.equal(invalid.needsReview[0].original, 'not a phone');
   assert.equal(createCustomList({ name: 'Cancelled', numbers: '+12025550100', show: { ...show, status: 'cancelled' } }, now).error, 'show_not_sendable');
 });
 
