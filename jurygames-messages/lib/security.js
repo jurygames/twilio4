@@ -4,6 +4,7 @@ const SESSION_COOKIE = 'jg_messaging_session';
 const REFRESH_COOKIE = 'jg_messaging_refresh';
 const MAX_RECIPIENTS = 50;
 const SEND_CONCURRENCY = 2;
+const RFC3339_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|z|([+-])(\d{2}):(\d{2}))$/;
 const SESSION_TTL_SECONDS = 15 * 60;
 const APPROVAL_TTL_MS = 2 * 60 * 1000;
 const LOGIN_WINDOW_MS = 60 * 1000;
@@ -64,12 +65,63 @@ function parseRecipients(input) {
   return { ok: true, recipients: [...unique] };
 }
 
-function canonicalExpiry(value) {
+function parseRfc3339Timestamp(value) {
   if (typeof value !== 'string') return null;
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return null;
-  try { return new Date(timestamp).toISOString() === value ? timestamp : null; }
-  catch { return null; }
+  const match = RFC3339_TIMESTAMP.exec(value);
+  if (!match) return null;
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText, fraction = '', zone, offsetSign, offsetHourText, offsetMinuteText] = match;
+  const year = Number(yearText), month = Number(monthText), day = Number(dayText);
+  const hour = Number(hourText), minute = Number(minuteText), second = Number(secondText);
+  if (month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) return null;
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = month === 2 ? (leapYear ? 29 : 28) : [4, 6, 9, 11].includes(month) ? 30 : 31;
+  if (day < 1 || day > daysInMonth) return null;
+
+  let offsetMinutes = 0;
+  if (offsetSign) {
+    const offsetHour = Number(offsetHourText), offsetMinute = Number(offsetMinuteText);
+    if (offsetHour > 23 || offsetMinute > 59) return null;
+    const magnitude = offsetHour * 60 + offsetMinute;
+    offsetMinutes = offsetSign === '+' ? magnitude : -magnitude;
+  }
+
+  const local = new Date(0);
+  local.setUTCFullYear(year, month - 1, day);
+  local.setUTCHours(hour, minute, second, 0);
+  if (!Number.isFinite(local.getTime()) || local.getUTCFullYear() !== year || local.getUTCMonth() !== month - 1 || local.getUTCDate() !== day) return null;
+  const utcSecondMilliseconds = local.getTime() - offsetMinutes * 60_000;
+  const utcSecond = new Date(utcSecondMilliseconds);
+  if (!Number.isFinite(utcSecondMilliseconds) || utcSecond.getUTCFullYear() < 0 || utcSecond.getUTCFullYear() > 9999) return null;
+
+  const fractionalNanoseconds = BigInt((fraction || '0').padEnd(9, '0'));
+  const fractionalText = fractionalNanoseconds % 1_000_000n === 0n
+    ? (fractionalNanoseconds / 1_000_000n).toString().padStart(3, '0')
+    : fractionalNanoseconds.toString().padStart(9, '0').replace(/0+$/, '');
+  const canonical = `${utcSecond.toISOString().slice(0, 19)}.${fractionalText}Z`;
+  const epochNanoseconds = BigInt(utcSecondMilliseconds) * 1_000_000n + fractionalNanoseconds;
+  return { canonical, epochNanoseconds, epochMilliseconds: Number(epochNanoseconds) / 1_000_000 };
+}
+
+function canonicalTimestamp(value) {
+  return parseRfc3339Timestamp(value)?.canonical || null;
+}
+
+function timestampNanoseconds(value) {
+  return parseRfc3339Timestamp(value)?.epochNanoseconds ?? null;
+}
+
+function sameInstant(left, right) {
+  const a = timestampNanoseconds(left), b = timestampNanoseconds(right);
+  return a !== null && b !== null && a === b;
+}
+
+function nowNanoseconds(now) {
+  if (!Number.isFinite(now)) return null;
+  return BigInt(Math.trunc(now)) * 1_000_000n;
+}
+
+function canonicalExpiry(value) {
+  return parseRfc3339Timestamp(value)?.epochMilliseconds ?? null;
 }
 
 function parseSendRequest(body, now = Date.now()) {
@@ -84,18 +136,24 @@ function parseSendRequest(body, now = Date.now()) {
   if (!['automatic', 'custom'].includes(group.kind) || !['show', 'standalone'].includes(group.scope)) {
     return { ok: false, error: 'send_group_scope_invalid' };
   }
-  const expiresAt = canonicalExpiry(group.expiresAtIso);
-  if (!expiresAt || expiresAt <= now) return { ok: false, error: 'send_group_expiry_invalid' };
+  const expiresAtIso = canonicalTimestamp(group.expiresAtIso);
+  const expiresAtNanoseconds = timestampNanoseconds(group.expiresAtIso);
+  const nowNs = nowNanoseconds(now);
+  if (!expiresAtIso || expiresAtNanoseconds === null || nowNs === null || expiresAtNanoseconds <= nowNs) {
+    return { ok: false, error: 'send_group_expiry_invalid' };
+  }
   const showId = group.showId;
-  const showStartsAt = group.showStartsAt;
-  const showEndsAt = group.showEndsAt;
+  const showStartsAt = group.scope === 'show' ? canonicalTimestamp(group.showStartsAt) : null;
+  const showEndsAt = group.scope === 'show' ? canonicalTimestamp(group.showEndsAt) : null;
   const showName = group.showName;
   const showLocation = group.showLocation;
   const deliveryType = group.deliveryType;
   const bookingDistinction = group.bookingDistinction;
   if (group.scope === 'show') {
     if (typeof showId !== 'string' || !showId.trim() || showId.length > 256) return { ok: false, error: 'show_id_required' };
-    if (!canonicalExpiry(showStartsAt) || !canonicalExpiry(showEndsAt) || Date.parse(showEndsAt) <= Date.parse(showStartsAt)) {
+    const startNanoseconds = timestampNanoseconds(showStartsAt);
+    const endNanoseconds = timestampNanoseconds(showEndsAt);
+    if (!showStartsAt || !showEndsAt || startNanoseconds === null || endNanoseconds === null || endNanoseconds <= startNanoseconds) {
       return { ok: false, error: 'show_time_identity_invalid' };
     }
     if (typeof showName !== 'string' || !showName.trim() || showName.length > 120 ||
@@ -105,7 +163,8 @@ function parseSendRequest(body, now = Date.now()) {
       return { ok: false, error: 'show_identity_invalid' };
     }
   } else {
-    if (group.kind !== 'custom' || (showId !== undefined && showId !== null && showId !== '') || expiresAt > now + 24 * 60 * 60 * 1000) {
+    if (group.kind !== 'custom' || (showId !== undefined && showId !== null && showId !== '') ||
+        expiresAtNanoseconds > nowNs + 24n * 60n * 60n * 1_000_000_000n) {
       return { ok: false, error: 'standalone_expiry_invalid' };
     }
   }
@@ -124,7 +183,7 @@ function parseSendRequest(body, now = Date.now()) {
     showLocation: group.scope === 'show' ? (showLocation || null) : null,
     deliveryType: group.scope === 'show' ? deliveryType : null,
     bookingDistinction: group.scope === 'show' ? bookingDistinction : null,
-    expiresAtIso: group.expiresAtIso,
+    expiresAtIso,
     recipients: parsed.recipients
   };
 }
@@ -282,21 +341,27 @@ function recipientFingerprint(secret, recipients) {
 
 function createSignedReviewToken(input, purpose, consentAcknowledged, env = process.env, now = Date.now()) {
   const secret = env.MESSAGING_APPROVAL_SECRET;
+  const expiresAtIso = canonicalTimestamp(input?.expiresAtIso);
+  const expiresAtNanoseconds = timestampNanoseconds(input?.expiresAtIso);
+  const nowNs = nowNanoseconds(now);
+  const showStartsAt = input?.groupScope === 'show' ? canonicalTimestamp(input.showStartsAt) : null;
+  const showEndsAt = input?.groupScope === 'show' ? canonicalTimestamp(input.showEndsAt) : null;
+  const startNanoseconds = timestampNanoseconds(showStartsAt);
+  const endNanoseconds = timestampNanoseconds(showEndsAt);
   if (typeof secret !== 'string' || Buffer.byteLength(secret, 'utf8') < 32 ||
       typeof input?.actorId !== 'string' || !input.actorId || !isUuid(input.requestId) ||
       typeof input.templateId !== 'string' || !input.templateId ||
       typeof input.groupName !== 'string' || !input.groupName.trim() ||
       !['automatic', 'custom'].includes(input.groupKind) || !['show', 'standalone'].includes(input.groupScope) ||
-      !canonicalExpiry(input.expiresAtIso) || canonicalExpiry(input.expiresAtIso) <= now ||
+      !expiresAtIso || expiresAtNanoseconds === null || nowNs === null || expiresAtNanoseconds <= nowNs ||
       (input.groupScope === 'show' && (typeof input.showId !== 'string' || !input.showId.trim() || input.showId.length > 256)) ||
-      (input.groupScope === 'show' && (!canonicalExpiry(input.showStartsAt) || !canonicalExpiry(input.showEndsAt) ||
-        Date.parse(input.showEndsAt) <= Date.parse(input.showStartsAt))) ||
+      (input.groupScope === 'show' && (!showStartsAt || !showEndsAt || startNanoseconds === null || endNanoseconds === null || endNanoseconds <= startNanoseconds)) ||
       (input.groupScope === 'show' && (typeof input.showName !== 'string' || !input.showName.trim() || input.showName.length > 120 ||
         (input.showLocation !== null && input.showLocation !== undefined && (typeof input.showLocation !== 'string' || input.showLocation.length > 500)) ||
         !['private', 'public', 'direct_booking', 'unknown'].includes(input.deliveryType) ||
         !['Private DMN', 'Public DMN', 'Direct booking', 'DMN booking'].includes(input.bookingDistinction))) ||
       (input.groupScope === 'standalone' && (input.groupKind !== 'custom' || (input.showId !== null && input.showId !== undefined) ||
-        Date.parse(input.expiresAtIso) > now + 24 * 60 * 60 * 1000)) ||
+        expiresAtNanoseconds > nowNs + 24n * 60n * 60n * 1_000_000_000n)) ||
       input.consentAcknowledged !== consentAcknowledged ||
       !Array.isArray(input.recipients) || input.recipients.length < 1 || input.recipients.length > MAX_RECIPIENTS ||
       input.recipients.some((recipient) => !isValidE164(recipient)) || typeof input.resolvedFrom !== 'string' ||
@@ -312,13 +377,13 @@ function createSignedReviewToken(input, purpose, consentAcknowledged, env = proc
     groupKind: input.groupKind,
     groupScope: input.groupScope,
     showId: input.groupScope === 'show' ? input.showId.trim() : null,
-    showStartsAt: input.groupScope === 'show' ? input.showStartsAt : null,
-    showEndsAt: input.groupScope === 'show' ? input.showEndsAt : null,
+    showStartsAt,
+    showEndsAt,
     showName: input.groupScope === 'show' ? input.showName.trim() : null,
     showLocation: input.groupScope === 'show' ? (input.showLocation || null) : null,
     deliveryType: input.groupScope === 'show' ? input.deliveryType : null,
     bookingDistinction: input.groupScope === 'show' ? input.bookingDistinction : null,
-    expiresAtIso: input.expiresAtIso,
+    expiresAtIso,
     consentAcknowledged,
     recipientFingerprint: recipientFingerprint(secret, input.recipients),
     templateFingerprint: templateFingerprint(input.template),
@@ -341,6 +406,9 @@ function createApprovalToken(input, env = process.env, now = Date.now()) {
 
 function verifyReviewToken(token, expected, purpose, consentAcknowledged, env = process.env, now = Date.now()) {
   const secret = env.MESSAGING_APPROVAL_SECRET;
+  const expectedExpiresAtIso = canonicalTimestamp(expected?.expiresAtIso);
+  const expectedShowStartsAt = expected?.groupScope === 'show' ? canonicalTimestamp(expected.showStartsAt) : null;
+  const expectedShowEndsAt = expected?.groupScope === 'show' ? canonicalTimestamp(expected.showEndsAt) : null;
   if (typeof secret !== 'string' || Buffer.byteLength(secret, 'utf8') < 32 ||
       typeof token !== 'string' || token.length > 2048 || !expected?.template ||
       !Array.isArray(expected.recipients) || expected.recipients.length < 1 || expected.recipients.length > MAX_RECIPIENTS ||
@@ -357,9 +425,9 @@ function verifyReviewToken(token, expected, purpose, consentAcknowledged, env = 
   return payload?.version === 2 && payload.purpose === purpose && payload.actorId === expected.actorId && payload.requestId === expected.requestId &&
     payload.templateId === expected.templateId && payload.groupName === expected.groupName?.trim() &&
     payload.groupKind === expected.groupKind && payload.groupScope === expected.groupScope &&
-    payload.showId === (expected.groupScope === 'show' ? expected.showId : null) && payload.expiresAtIso === expected.expiresAtIso &&
-    payload.showStartsAt === (expected.groupScope === 'show' ? expected.showStartsAt : null) &&
-    payload.showEndsAt === (expected.groupScope === 'show' ? expected.showEndsAt : null) &&
+    payload.showId === (expected.groupScope === 'show' ? expected.showId : null) && payload.expiresAtIso === expectedExpiresAtIso &&
+    payload.showStartsAt === expectedShowStartsAt &&
+    payload.showEndsAt === expectedShowEndsAt &&
     payload.showName === (expected.groupScope === 'show' ? expected.showName : null) &&
     payload.showLocation === (expected.groupScope === 'show' ? (expected.showLocation || null) : null) &&
     payload.deliveryType === (expected.groupScope === 'show' ? expected.deliveryType : null) &&
@@ -458,6 +526,11 @@ module.exports = {
   parseCookie,
   isValidE164,
   parseRecipients,
+  canonicalTimestamp,
+  canonicalExpiry,
+  timestampNanoseconds,
+  sameInstant,
+  nowNanoseconds,
   parseSendRequest,
   allowedSenders,
   isAllowedMediaUrl,

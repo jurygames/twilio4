@@ -1,18 +1,11 @@
 const { getSummonsMessagingShows, getSummonsShowRecipients } = require('./summonsMessagingApi');
 const { groupInternationalRecipients, normalizePhoneNumber } = require('./phoneNumbers');
+const { canonicalTimestamp, timestampNanoseconds, sameInstant, nowNanoseconds } = require('./security');
 
 function sameShowIdentity(listed, recipientShow) {
   return Boolean(listed && recipientShow && listed.showId && recipientShow.id === listed.showId &&
-    listed.startsAt === recipientShow.startsAt && listed.endsAt === recipientShow.endsAt &&
+    sameInstant(listed.startsAt, recipientShow.startsAt) && sameInstant(listed.endsAt, recipientShow.endsAt) &&
     listed.source === recipientShow.source && listed.deliveryType === recipientShow.deliveryType);
-}
-
-function isCanonicalIso(value) {
-  if (typeof value !== 'string') return false;
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return false;
-  try { return new Date(timestamp).toISOString() === value; }
-  catch { return false; }
 }
 
 function recipientSummary(recipients) {
@@ -25,12 +18,13 @@ async function validateSendGroup(request, accessToken, {
   readRecipients = getSummonsShowRecipients,
   now = Date.now(),
 } = {}) {
+  const requestedExpiryNanoseconds = timestampNanoseconds(request?.expiresAtIso);
+  const nowNs = nowNanoseconds(now);
   if (!request || !['automatic', 'custom'].includes(request.groupKind) ||
-      !['show', 'standalone'].includes(request.groupScope) || !isCanonicalIso(request.expiresAtIso)) {
+      !['show', 'standalone'].includes(request.groupScope) || requestedExpiryNanoseconds === null || nowNs === null) {
     return { ok: false, status: 400, error: 'send_group_invalid' };
   }
-  const requestedExpiry = Date.parse(request.expiresAtIso);
-  if (requestedExpiry <= now) return { ok: false, status: 409, error: 'send_group_expired' };
+  if (requestedExpiryNanoseconds <= nowNs) return { ok: false, status: 409, error: 'send_group_expired' };
   if (!Array.isArray(request.recipients) || request.recipients.length < 1 || request.recipients.length > 50 ||
       request.recipients.some(number => {
         const parsed = normalizePhoneNumber(number);
@@ -40,13 +34,14 @@ async function validateSendGroup(request, accessToken, {
   }
 
   if (request.groupScope === 'standalone') {
-    if (request.groupKind !== 'custom' || request.showId || requestedExpiry > now + 24 * 60 * 60 * 1000) {
+    if (request.groupKind !== 'custom' || request.showId ||
+        requestedExpiryNanoseconds > nowNs + 24n * 60n * 60n * 1_000_000_000n) {
       return { ok: false, status: 400, error: 'standalone_expiry_invalid' };
     }
     return {
       ok: true,
       show: null,
-      expiresAtIso: request.expiresAtIso,
+      expiresAtIso: canonicalTimestamp(request.expiresAtIso),
       countryGroups: recipientSummary(request.recipients),
       exclusions: { source: 'manual_list', missingNumberCount: 0, needsReviewCount: 0 }
     };
@@ -59,32 +54,43 @@ async function validateSendGroup(request, accessToken, {
   const listing = await listShows(accessToken);
   if (!listing || !Array.isArray(listing.shows)) throw new Error('show_source_unavailable');
   const listed = listing.shows.find(show => show.showId === request.showId);
-  if (!listed || listed.status !== 'ready' || !isCanonicalIso(listed.contactsExpireAt) ||
-      Date.parse(listed.contactsExpireAt) <= now || listed.deliveryType === 'unknown' ||
-      listed.startsAt !== request.showStartsAt || listed.endsAt !== request.showEndsAt ||
+  const listedStart = canonicalTimestamp(listed?.startsAt);
+  const listedEnd = canonicalTimestamp(listed?.endsAt);
+  const listedExpiry = canonicalTimestamp(listed?.contactsExpireAt);
+  const requestStart = canonicalTimestamp(request.showStartsAt);
+  const requestEnd = canonicalTimestamp(request.showEndsAt);
+  const startNanoseconds = timestampNanoseconds(listedStart);
+  const endNanoseconds = timestampNanoseconds(listedEnd);
+  const listedExpiryNanoseconds = timestampNanoseconds(listed?.contactsExpireAt);
+  if (!listed || listed.status !== 'ready' || !listedStart || !listedEnd || !listedExpiry ||
+      startNanoseconds === null || endNanoseconds === null || endNanoseconds <= startNanoseconds ||
+      listedExpiryNanoseconds === null || listedExpiryNanoseconds <= nowNs || listed.deliveryType === 'unknown' ||
+      !requestStart || !requestEnd || !sameInstant(listedStart, requestStart) || !sameInstant(listedEnd, requestEnd) ||
       listed.name !== request.showName || (listed.location || null) !== request.showLocation ||
       listed.deliveryType !== request.deliveryType || listed.bookingDistinction !== request.bookingDistinction) {
     return { ok: false, status: 409, error: 'show_not_sendable' };
   }
+  const canonicalListed = { ...listed, startsAt: listedStart, endsAt: listedEnd, contactsExpireAt: listedExpiry };
 
   if (request.groupKind === 'custom') {
-    if (request.expiresAtIso !== listed.contactsExpireAt) {
+    if (canonicalTimestamp(request.expiresAtIso) !== listedExpiry) {
       return { ok: false, status: 409, error: 'show_changed_during_read' };
     }
     return {
       ok: true,
-      show: listed,
-      expiresAtIso: listed.contactsExpireAt,
+      show: canonicalListed,
+      expiresAtIso: listedExpiry,
       countryGroups: recipientSummary(request.recipients),
       exclusions: { source: 'manual_list', missingNumberCount: 0, needsReviewCount: 0 }
     };
   }
 
   const snapshot = await readRecipients(accessToken, request.showId);
+  const snapshotExpiryNanoseconds = timestampNanoseconds(snapshot?.expiresAtIso);
   if (!snapshot || snapshot.showId !== request.showId || !['ready', 'incomplete'].includes(snapshot.status) ||
-      !Array.isArray(snapshot.recipients) || !isCanonicalIso(snapshot.expiresAtIso) ||
-      requestedExpiry !== Date.parse(snapshot.expiresAtIso) || requestedExpiry > Date.parse(listed.contactsExpireAt) ||
-      !sameShowIdentity(listed, snapshot.show)) {
+      !Array.isArray(snapshot.recipients) || snapshotExpiryNanoseconds === null ||
+      requestedExpiryNanoseconds !== snapshotExpiryNanoseconds || requestedExpiryNanoseconds > listedExpiryNanoseconds ||
+      !sameShowIdentity(canonicalListed, snapshot.show)) {
     return { ok: false, status: 409, error: 'show_changed_during_read' };
   }
 
@@ -99,8 +105,8 @@ async function validateSendGroup(request, accessToken, {
   }
   return {
     ok: true,
-    show: listed,
-    expiresAtIso: snapshot.expiresAtIso,
+    show: canonicalListed,
+    expiresAtIso: canonicalTimestamp(snapshot.expiresAtIso),
     countryGroups: recipientSummary(request.recipients),
     exclusions: {
       source: 'summons',

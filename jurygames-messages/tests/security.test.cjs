@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const Twilio = require('twilio');
 const security = require('../lib/security');
+const { createSendPreviewHandler } = require('../lib/sendPreviewHandler');
 const { normalizePhoneNumber, groupInternationalRecipients } = require('../lib/phoneNumbers');
 const { createCustomList } = require('../lib/customLists');
 const { SummonsMessagingApiError, getSummonsMessagingShows, getSummonsShowRecipients } = require('../lib/summonsMessagingApi');
@@ -211,6 +212,20 @@ test('send mutations require same-origin and the application request header', ()
   assert.equal(security.isTrustedMutation({ headers: { origin: 'https://messages.example.test' } }, env), false);
 });
 
+test('RFC3339 parser accepts equivalent instants and rejects malformed calendar or offset values', () => {
+  assert.equal(security.canonicalTimestamp('2026-11-21T13:30:00Z'), '2026-11-21T13:30:00.000Z');
+  assert.equal(security.canonicalTimestamp('2026-11-21T13:30:00.000Z'), '2026-11-21T13:30:00.000Z');
+  assert.equal(security.canonicalTimestamp('2026-11-21T14:30:00+01:00'), '2026-11-21T13:30:00.000Z');
+  assert.equal(security.canonicalTimestamp('2026-11-21T13:30:00.250Z'), '2026-11-21T13:30:00.250Z');
+  assert.equal(security.sameInstant('2026-11-21T13:30:00.123456789Z', '2026-11-21T13:30:00.123456788Z'), false);
+  assert.equal(security.sameInstant('2026-03-29T01:30:00Z', '2026-03-29T02:30:00+01:00'), true);
+  assert.equal(security.sameInstant('2026-10-25T00:30:00Z', '2026-10-25T01:30:00+01:00'), true);
+  assert.equal(security.sameInstant('2026-10-25T00:30:00Z', '2026-10-25T01:30:00Z'), false);
+  for (const value of ['', '2026-11-21T13:30:00', '2026-02-30T13:30:00Z', '2026-11-21T13:30:00+25:00']) {
+    assert.equal(security.canonicalTimestamp(value), null);
+  }
+});
+
 test('send request accepts only a bounded E.164 list and ignores caller-supplied template fields', () => {
   const expiry = '2026-11-22T21:00:00.000Z';
   const showGroup = {
@@ -243,6 +258,10 @@ test('send request accepts only a bounded E.164 list and ignores caller-supplied
   assert.equal(security.parseSendRequest({ group: { ...showGroup, list: Array(51).fill(sender) }, templateId: 'x', requestId: '02bb5d84-2e59-4a8e-9d3d-e10c0731b751' }).error, 'recipient_limit_exceeded');
   assert.equal(security.parseSendRequest({ group: { ...showGroup, showId: 'other-show' }, templateId: 'x', requestId: '02bb5d84-2e59-4a8e-9d3d-e10c0731b751' }).showId, 'other-show');
   assert.equal(security.parseSendRequest({ group: { ...showGroup, showStartsAt: 'invalid' }, templateId: 'x', requestId: '02bb5d84-2e59-4a8e-9d3d-e10c0731b751' }).error, 'show_time_identity_invalid');
+  assert.equal(security.parseSendRequest({ group: { ...showGroup, showStartsAt: '2026-11-20T21:00:00Z', showEndsAt: '2026-11-20T21:00:00Z' }, templateId: 'x', requestId: '02bb5d84-2e59-4a8e-9d3d-e10c0731b751' }).error, 'show_time_identity_invalid');
+  assert.equal(security.parseSendRequest({ group: { ...showGroup, showStartsAt: '2026-11-20T21:00:01Z', showEndsAt: '2026-11-20T21:00:00Z' }, templateId: 'x', requestId: '02bb5d84-2e59-4a8e-9d3d-e10c0731b751' }).error, 'show_time_identity_invalid');
+  assert.equal(security.parseSendRequest({ group: { ...showGroup, showStartsAt: '2026-02-30T19:00:00Z' }, templateId: 'x', requestId: '02bb5d84-2e59-4a8e-9d3d-e10c0731b751' }).error, 'show_time_identity_invalid');
+  assert.equal(security.parseSendRequest({ group: { ...showGroup, showEndsAt: undefined }, templateId: 'x', requestId: '02bb5d84-2e59-4a8e-9d3d-e10c0731b751' }).error, 'show_time_identity_invalid');
   assert.equal(security.parseSendRequest({ group: { ...showGroup, expiresAtIso: '2026-11-19T12:00:00.000Z' }, templateId: 'x', requestId: '02bb5d84-2e59-4a8e-9d3d-e10c0731b751' }, Date.parse('2026-11-19T12:00:00.000Z')).error, 'send_group_expiry_invalid');
 
   const standalone = security.parseSendRequest({
@@ -336,6 +355,12 @@ test('approval tokens bind the operator, exact recipients, template, sender, gro
   assert.equal(token.includes(sender), false);
   assert.equal(security.createApprovalToken({ ...request, consentAcknowledged: false }, env, 1000), null);
   assert.equal(security.verifyApprovalToken(token, request, env, 2000), true);
+  assert.equal(security.verifyApprovalToken(token, {
+    ...request,
+    showStartsAt: '2026-11-20T19:00:00+00:00',
+    showEndsAt: '2026-11-20T21:00:00+00:00',
+    expiresAtIso: '2026-11-22T21:00:00Z'
+  }, env, 2000), true, 'equivalent RFC3339 representations retain the same approval identity');
   assert.equal(security.verifyApprovalToken(token, { ...request, recipients: [sender] }, env, 2000), false);
   assert.equal(security.verifyApprovalToken(token, { ...request, groupName: 'Other group' }, env, 2000), false);
   assert.equal(security.verifyApprovalToken(token, { ...request, showId: 'parallel-show' }, env, 2000), false);
@@ -385,6 +410,15 @@ test('send-group authorization binds an exact current show and automatic recipie
   assert.equal(allowed.ok, true);
   assert.equal(allowed.show.showId, show.showId);
 
+  const expiredShow = { ...show, contactsExpireAt: '2026-11-19T11:00:00.000Z' };
+  assert.equal((await validateSendGroup(parsed, 'synthetic-token', {
+    now, listShows: async () => ({ shows: [expiredShow] }), readRecipients: async () => { throw new Error('expired show must not read recipients'); }
+  })).error, 'show_not_sendable');
+  const quarantinedShow = { ...show, status: 'quarantined' };
+  assert.equal((await validateSendGroup(parsed, 'synthetic-token', {
+    now, listShows: async () => ({ shows: [quarantinedShow] }), readRecipients: async () => { throw new Error('quarantined show must not read recipients'); }
+  })).error, 'show_not_sendable');
+
   const wrongPerformance = await validateSendGroup({ ...parsed, showId: 'another-same-time-show' }, 'synthetic-token', {
     now, listShows: async () => ({ shows: [show] }), readRecipients: async () => { throw new Error('must_not_read_other_show'); }
   });
@@ -422,18 +456,153 @@ test('send-group authorization binds an exact current show and automatic recipie
   }), /synthetic Calendar outage/);
 });
 
+test('21 November Calendar instant reaches preview, approval, and dispatch with one canonical show identity', async () => {
+  const now = Date.parse('2026-11-20T12:00:00Z');
+  const requestId = '02bb5d84-2e59-4a8e-9d3d-e10c0731b751';
+  const incident = {
+    showId: 'tm0mls8j7mdnjpnpnmuc35p4ho',
+    name: 'Jury Duty (public)',
+    startsAt: '2026-11-21T13:30:00.000Z',
+    endsAt: '2026-11-21T15:00:00.000Z',
+    contactsExpireAt: '2026-11-23T15:00:00.000Z',
+    source: 'dmn', deliveryType: 'public', bookingDistinction: 'Public DMN', status: 'ready', location: 'Synthetic venue'
+  };
+  const recipientShow = {
+    id: incident.showId, name: incident.name,
+    startsAt: '2026-11-21T14:30:00+01:00', endsAt: '2026-11-21T15:00:00Z',
+    source: incident.source, deliveryType: incident.deliveryType, location: incident.location
+  };
+  const body = {
+    group: {
+      name: 'Synthetic incident recipients', list: ['+12025550100'], kind: 'automatic', scope: 'show',
+      showId: incident.showId,
+      showStartsAt: '2026-11-21T13:30:00Z',
+      showEndsAt: '2026-11-21T15:00:00Z',
+      showName: incident.name, showLocation: incident.location,
+      deliveryType: incident.deliveryType, bookingDistinction: incident.bookingDistinction,
+      expiresAtIso: '2026-11-23T16:00:00+01:00'
+    },
+    templateId: 'synthetic-approved-template', requestId
+  };
+  const dependencies = {
+    now,
+    listShows: async () => ({ shows: [{ ...incident, startsAt: '2026-11-21T13:30:00Z', endsAt: '2026-11-21T15:00:00Z' }] }),
+    readRecipients: async () => ({
+      showId: incident.showId, status: 'ready', show: recipientShow,
+      expiresAtIso: '2026-11-23T15:00:00Z', recipients: [{ number: '+12025550100', reviewRequired: false }]
+    })
+  };
+  const previewRequest = security.parseSendRequest(body, now);
+  assert.equal(previewRequest.ok, true);
+  assert.equal(previewRequest.showStartsAt, '2026-11-21T13:30:00.000Z');
+  assert.equal(previewRequest.showEndsAt, '2026-11-21T15:00:00.000Z');
+  assert.equal(previewRequest.expiresAtIso, incident.contactsExpireAt);
+  assert.equal((await validateSendGroup(previewRequest, 'synthetic-token', dependencies)).ok, true);
+
+  const template = {
+    id: 'synthetic-approved-template', name: 'Synthetic preview', show: 'Jury Duty', type: 'SMS',
+    from_number: sender, content: 'Synthetic test message', summary: 'Fixture only'
+  };
+  const env = { MESSAGING_APPROVAL_SECRET: 'test-approval-secret-0123456789abcdef' };
+  const binding = {
+    actorId: 'synthetic-operator-id', requestId, templateId: previewRequest.templateId,
+    groupName: previewRequest.groupName, groupKind: previewRequest.groupKind, groupScope: previewRequest.groupScope,
+    showId: previewRequest.showId, showStartsAt: previewRequest.showStartsAt, showEndsAt: previewRequest.showEndsAt,
+    showName: previewRequest.showName, showLocation: previewRequest.showLocation,
+    deliveryType: previewRequest.deliveryType, bookingDistinction: previewRequest.bookingDistinction,
+    expiresAtIso: previewRequest.expiresAtIso, recipients: previewRequest.recipients,
+    template, resolvedFrom: sender
+  };
+  const previewToken = security.createPreviewToken({ ...binding, consentAcknowledged: false }, env, now);
+  assert.equal(security.verifyPreviewToken(previewToken, { ...binding, consentAcknowledged: false }, env, now + 1000), true);
+  const approvalToken = security.createApprovalToken({ ...binding, consentAcknowledged: true }, env, now);
+  assert.equal(security.verifyApprovalToken(approvalToken, { ...binding, consentAcknowledged: true }, env, now + 1000), true);
+  assert.equal(security.verifyApprovalToken(approvalToken, {
+    ...binding, showStartsAt: '2026-11-21T13:31:00Z', consentAcknowledged: true
+  }, env, now + 1000), false, 'a genuinely changed show time invalidates the approval');
+
+  const dispatchRequest = security.parseSendRequest(body, now);
+  assert.equal((await validateSendGroup(dispatchRequest, 'synthetic-token', dependencies)).ok, true);
+  assert.equal(security.verifyApprovalToken(approvalToken, { ...binding, consentAcknowledged: true }, env, now + 2000), true);
+  assert.equal(template.content, 'Synthetic test message');
+});
+
+test('Review Send preview handler returns an approvable fixture preview for the incident timestamp', async () => {
+  const now = Date.parse('2026-11-20T12:00:00Z');
+  const session = { user: { id: 'synthetic-operator-id' }, accessToken: 'synthetic-token' };
+  const template = {
+    id: 'synthetic-approved-template', name: 'Synthetic preview', show: 'Jury Duty', type: 'SMS',
+    from_number: sender, content: 'Synthetic test message', summary: 'Fixture only'
+  };
+  const show = {
+    showId: 'tm0mls8j7mdnjpnpnmuc35p4ho', name: 'Jury Duty (public)',
+    startsAt: '2026-11-21T13:30:00Z', endsAt: '2026-11-21T15:00:00Z',
+    contactsExpireAt: '2026-11-23T15:00:00Z', source: 'dmn', deliveryType: 'public',
+    bookingDistinction: 'Public DMN', status: 'ready', location: 'Synthetic venue'
+  };
+  const body = {
+    group: {
+      name: 'Synthetic incident recipients', list: ['+12025550100'], kind: 'automatic', scope: 'show',
+      showId: show.showId, showStartsAt: show.startsAt, showEndsAt: show.endsAt,
+      showName: show.name, showLocation: show.location, deliveryType: show.deliveryType,
+      bookingDistinction: show.bookingDistinction, expiresAtIso: show.contactsExpireAt
+    },
+    templateId: template.id, requestId: '02bb5d84-2e59-4a8e-9d3d-e10c0731b751'
+  };
+  const env = { MESSAGING_APPROVAL_SECRET: 'test-approval-secret-0123456789abcdef' };
+  const handler = createSendPreviewHandler({
+    requireMessagingRole: async (_req, _res, role) => { assert.equal(role, 'operator'); return session; },
+    messagingUserClient: () => ({
+      from: table => {
+        assert.equal(table, 'jg_messaging_templates');
+        return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: template, error: null }) }) }) };
+      }
+    }),
+    validateSendGroup: (request, token) => validateSendGroup(request, token, {
+      now,
+      listShows: async () => ({ shows: [show] }),
+      readRecipients: async () => ({ showId: show.showId, status: 'ready', show: {
+        id: show.showId, name: show.name, startsAt: '2026-11-21T13:30:00.000Z', endsAt: '2026-11-21T15:00:00.000Z',
+        source: show.source, deliveryType: show.deliveryType, location: show.location
+      }, expiresAtIso: '2026-11-23T15:00:00.000Z', recipients: [{ number: '+12025550100', reviewRequired: false }] })
+    }),
+    callbackUrl: security.callbackUrl,
+    canSend: () => true,
+    createPreviewToken: input => security.createPreviewToken(input, env, now),
+    isTrustedMutation: () => true,
+    parseSendRequest: request => security.parseSendRequest(request, now),
+    resolveVoiceFrom: async () => { throw new Error('SMS previews must not resolve voice senders'); },
+    validateTemplateForSend: row => security.validateTemplateForSend(row, { DEFAULT_FROM_NUMBER_UK: sender })
+  });
+  const response = {
+    headers: {}, statusCode: 0, body: null,
+    setHeader(name, value) { this.headers[name] = value; },
+    status(code) { this.statusCode = code; return this; },
+    json(value) { this.body = value; return this; }
+  };
+  await handler({ method: 'POST', headers: {}, body }, response);
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.canApprove, true);
+  assert.equal(response.body.show.showId, show.showId);
+  assert.equal(response.body.show.startsAt, '2026-11-21T13:30:00.000Z');
+  assert.equal(response.body.show.endsAt, '2026-11-21T15:00:00.000Z');
+  assert.equal(response.body.template.content, 'Synthetic test message');
+  assert.equal(response.body.recipientCount, 1);
+});
+
 test('show-scoped custom groups require current Summons show identity, while standalone lists require a short expiry', async () => {
   const now = Date.parse('2026-11-19T12:00:00.000Z');
   const syntheticRecipient = '+12025550100'; // Fiction-only 555-0100 range.
   const show = {
     showId: 'synthetic-calendar-event', name: 'Synthetic Jury Duty',
-    startsAt: '2026-11-20T19:00:00.000Z', endsAt: '2026-11-20T21:00:00.000Z',
-    contactsExpireAt: '2026-11-22T21:00:00.000Z', source: 'dmn',
+    startsAt: '2030-01-01T19:00:00.000Z', endsAt: '2030-01-01T21:00:00.000Z',
+    contactsExpireAt: '2030-01-03T21:00:00.000Z', source: 'dmn',
     deliveryType: 'private', bookingDistinction: 'Private DMN', status: 'ready', location: null
   };
   const custom = {
     groupKind: 'custom', groupScope: 'show', showId: show.showId,
-    showStartsAt: show.startsAt, showEndsAt: show.endsAt, showName: show.name,
+    showStartsAt: '2030-01-01T19:00:00Z', showEndsAt: '2030-01-01T22:00:00+01:00', showName: show.name,
     showLocation: null, deliveryType: show.deliveryType, bookingDistinction: show.bookingDistinction,
     expiresAtIso: show.contactsExpireAt, recipients: [syntheticRecipient]
   };
@@ -447,7 +616,7 @@ test('show-scoped custom groups require current Summons show identity, while sta
   });
   assert.equal(invalidDestination.error, 'recipient_number_invalid');
 
-  const moved = await validateSendGroup({ ...custom, showEndsAt: '2026-11-21T21:00:00.000Z' }, 'token', {
+  const moved = await validateSendGroup({ ...custom, showEndsAt: '2030-01-02T21:00:00.000Z' }, 'token', {
     now, listShows: async () => ({ shows: [show] }), readRecipients: async () => { throw new Error('must_not_read'); }
   });
   assert.equal(moved.error, 'show_not_sendable');
