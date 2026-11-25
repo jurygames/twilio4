@@ -1,3 +1,4 @@
+import sessionRenewal from '../lib/sessionRenewal';
 import { useEffect, useRef, useState } from 'react';
 import previewDispatch from '../lib/previewDispatch';
 
@@ -22,7 +23,7 @@ export default function SendPanel({ groups, selectedGroupId, onSelectGroup, canS
   const [sending, setSending] = useState(false);
 
   const fetchTemplates = async () => {
-    const res = await fetch('/api/templates');
+    const res = await sessionRenewal.messagingFetch('/api/templates');
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !Array.isArray(data.templates)) {
       setStatus('Templates are unavailable.');
@@ -80,7 +81,7 @@ export default function SendPanel({ groups, selectedGroupId, onSelectGroup, canS
     setPreviewBusy(true);
     setStatus('Loading the server-approved preview...');
     try {
-      const res = await fetch('/api/send-preview', {
+      const res = await sessionRenewal.messagingFetch('/api/send-preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-jurygames-request': '1' },
         body: JSON.stringify({ group: groupPayload(group), templateId: selectedTemplate.id, requestId }),
@@ -112,7 +113,7 @@ export default function SendPanel({ groups, selectedGroupId, onSelectGroup, canS
         setStatus('Checking approval...');
       }
       const { stage, response: res, data } = await dispatchPreview({
-        fetcher: fetch,
+        fetcher: sessionRenewal.messagingFetch,
         payload: { group: groupPayload(group), templateId: template.id, requestId },
         previewToken,
         approvalToken,
