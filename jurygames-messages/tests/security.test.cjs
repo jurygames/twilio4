@@ -777,3 +777,55 @@ test('team tabs authorize only current team recipients, and deny manually pasted
   assert.equal((await validateSendGroup({...request, recipients:['+12025550101']}, 'fixture', deps)).error, 'recipient_group_changed');
   assert.equal((await validateSendGroup({...request, groupKind:'custom'}, 'fixture', deps)).error, 'recipient_group_changed');
 });
+
+
+const { checkSession, messagingFetch } = require('../lib/sessionRenewal');
+test('persistent refresh cookie stays scoped, HttpOnly and secure; access cookie remains short lived', () => {
+  assert.match(security.buildRefreshCookie('fixture', true), /Max-Age=34560000; HttpOnly; SameSite=Strict; Secure/);
+  assert.match(security.buildCookie('fixture', true), /Max-Age=900; HttpOnly; SameSite=Strict; Secure/);
+  assert.match(security.clearRefreshCookie(true), /Path=\/api\/auth\/session; Max-Age=0/);
+});
+
+function mockSessionRequests(replies) {
+  const calls = [];
+  return { calls, fetcher: async (url, options) => {
+    calls.push({ url, ...options });
+    const next = replies.shift();
+    assert.ok(next, 'unexpected request');
+    return { status: next.status, ok: next.status >= 200 && next.status < 300, json: async () => next.body, clone() { return this; } };
+  } };
+}
+
+test('expired or near-expiry session renews silently with protected PATCH', async () => {
+  for (const first of [{ status: 401, body: {} }, { status: 200, body: { expiresAt: 1000 } }]) {
+    const session = { role: 'operator', canSend: true, expiresAt: 900000 };
+    const mock = mockSessionRequests([first, { status: 200, body: session }]);
+    assert.deepEqual(await checkSession(mock.fetcher, () => 0), { status: 'ready', session });
+    assert.deepEqual(mock.calls.map(c => c.method), ['GET', 'PATCH']);
+    assert.equal(mock.calls[1].headers['x-jurygames-request'], '1');
+  }
+});
+
+test('fresh session does not rotate and temporary outage does not sign out', async () => {
+  const ready = mockSessionRequests([{ status: 200, body: { expiresAt: 900000 } }]);
+  assert.equal((await checkSession(ready.fetcher, () => 0)).status, 'ready');
+  assert.equal(ready.calls.length, 1);
+  const unavailable = mockSessionRequests([{ status: 401, body: {} }, { status: 503, body: {} }]);
+  assert.equal((await checkSession(unavailable.fetcher, () => 0)).status, 'unavailable');
+  const revoked = mockSessionRequests([{ status: 401, body: {} }, { status: 401, body: {} }, { status: 401, body: {} }]);
+  assert.equal((await checkSession(revoked.fetcher, () => 0)).status, 'signed-out');
+});
+
+test('authentication retry preserves exact send request and does not retry ambiguous dispatch', async () => {
+  const options = { method: 'POST', body: '{"requestId":"same"}' };
+  const mock = mockSessionRequests([{ status: 401, body: { error: 'authentication_required' } }, { status: 200, body: {} }]);
+  let renewCount = 0;
+  const renew = async () => { renewCount++; return { status: 'ready' }; };
+  assert.equal((await messagingFetch('/api/send', options, mock.fetcher, renew)).status, 200);
+  assert.equal(renewCount, 1);
+  assert.deepEqual(mock.calls[0], mock.calls[1]);
+  const unknown = mockSessionRequests([{ status: 503, body: {} }]);
+  assert.equal((await messagingFetch('/api/send', options, unknown.fetcher, renew)).status, 503);
+  assert.equal(unknown.calls.length, 1);
+  assert.equal(renewCount, 1);
+});
