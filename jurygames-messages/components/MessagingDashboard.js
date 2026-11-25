@@ -166,7 +166,7 @@ export default function MessagingDashboard({ canSend }) {
       setManualGroups(previous => previous.filter(group => Date.parse(group.expiresAtIso) > now));
       setRecipientSnapshot(previous => {
         if (!previous?.expiresAtIso || Date.parse(previous.expiresAtIso) > now) return previous;
-        return { ...previous, status: 'expired', recipients: [] };
+        return { ...previous, status: 'expired', recipients: [], emails: [] };
       });
     };
     const timer = setInterval(purgeExpired, 30 * 1000);
@@ -218,6 +218,7 @@ export default function MessagingDashboard({ canSend }) {
     ...automaticGroups,
     ...visibleManualGroups.filter(group =>
       !['cancelled', 'quarantined', 'unavailable', 'invalid'].includes(group.showStatus) &&
+      !(group.scope === 'show' && /:group:[1-9][0-9]{0,2}$/.test(group.showId || '')) &&
       Date.parse(group.expiresAtIso) > Date.now() &&
       (group.scope !== 'show' || (
         !showError && shows.some(show => show.showId === group.showId && show.status === 'ready' &&
@@ -258,7 +259,7 @@ export default function MessagingDashboard({ canSend }) {
             <section className="rounded-lg bg-gray-800 p-4">
               {recipientLoading && !recipientSnapshot ? <p role="status" className="text-sm text-gray-300">Loading contacts from Summons…</p> : null}
               {recipientError ? <p role="alert" className="mb-3 rounded bg-amber-950 p-3 text-sm text-amber-200">{recipientError}</p> : null}
-              {recipientSnapshot ? <InternationalGroups snapshot={recipientSnapshot} selectedShow={selectedShow} onUseGroup={group => setSelectedSendGroupId(group.id)} /> : null}
+              {recipientSnapshot && !recipientError ? <InternationalGroups key={selectedShowId} snapshot={recipientSnapshot} selectedShow={selectedShow} onUseGroup={group => setSelectedSendGroupId(group.id)} /> : null}
               {!recipientLoading && !recipientSnapshot && !recipientError ? <p className="text-sm text-gray-300">Select a performance to load its retained contact list.</p> : null}
             </section>
           ) : (
