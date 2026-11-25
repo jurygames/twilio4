@@ -6,6 +6,8 @@ const MAX_RECIPIENTS = 50;
 const SEND_CONCURRENCY = 2;
 const RFC3339_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|z|([+-])(\d{2}):(\d{2}))$/;
 const SESSION_TTL_SECONDS = 15 * 60;
+// Browsers cap persistent cookies at roughly 400 days. Rotate on use.
+const REFRESH_TTL_SECONDS = 400 * 24 * 60 * 60;
 const APPROVAL_TTL_MS = 2 * 60 * 1000;
 const LOGIN_WINDOW_MS = 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 8;
@@ -469,7 +471,7 @@ function buildCookie(token, secure = process.env.NODE_ENV === 'production') {
 }
 
 function buildRefreshCookie(token, secure = process.env.NODE_ENV === 'production') {
-  return `${REFRESH_COOKIE}=${encodeURIComponent(token)}; Path=/api/auth/session; Max-Age=${SESSION_TTL_SECONDS}; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`;
+  return `${REFRESH_COOKIE}=${encodeURIComponent(token)}; Path=/api/auth/session; Max-Age=${REFRESH_TTL_SECONDS}; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`;
 }
 
 function clearCookie(secure = process.env.NODE_ENV === 'production') {
