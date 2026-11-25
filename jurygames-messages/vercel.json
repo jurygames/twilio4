@@ -4,5 +4,6 @@
       "path": "/api/health",
       "schedule": "0 */12 * * *"
     }
-  ]
+  ],
+  "buildCommand": "npm test && npm run build && npm run test:api"
 }

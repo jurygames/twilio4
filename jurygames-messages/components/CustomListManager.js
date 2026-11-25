@@ -9,7 +9,7 @@ export default function CustomListManager({ shows = [], selectedShowId = '', gro
   const [expiryHours, setExpiryHours] = useState('');
   const [error, setError] = useState('');
   const [review, setReview] = useState([]);
-  const eligibleShows = useMemo(() => shows.filter(show => show.status === 'ready'), [shows]);
+  const eligibleShows = useMemo(() => shows.filter(show => show.status === 'ready' && !show.teamGroup && !/:group:[1-9][0-9]{0,2}$/.test(show.showId)), [shows]);
 
   useEffect(() => {
     if (selectedShowId && eligibleShows.some(show => show.showId === selectedShowId)) setShowId(selectedShowId);
@@ -57,7 +57,7 @@ export default function CustomListManager({ shows = [], selectedShowId = '', gro
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 id="custom-list-heading" className="text-xl font-semibold">Manual custom lists</h2>
-          <p className="text-sm text-gray-300">Show-scoped lists expire with the Summons show window. Standalone lists require an expiry of 24 hours or less. Lists stay in memory only.</p>
+          <p className="text-sm text-gray-300">Show-scoped lists expire with the Summons show window. Standalone lists require an expiry of 24 hours or less. Lists stay in memory only. Split teams use verified contact-form recipients, not manual show lists.</p>
         </div>
         <button type="button" className="rounded bg-blue-700 px-3 py-2 text-sm" onClick={() => setOpen(value => !value)}>
           {open ? 'Close form' : 'Create custom list'}

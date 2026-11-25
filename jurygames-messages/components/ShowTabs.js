@@ -50,6 +50,7 @@ export default function ShowTabs({ shows, selectedShowId, onSelect, onRefresh, l
               onClick={() => onSelect(show.showId)}
               className={`min-w-52 rounded-t px-3 py-2 text-left ${show.showId === selectedShowId ? 'bg-blue-800' : 'bg-gray-900 hover:bg-gray-700'}`}
             >
+              {show.teamGroup ? <span className="mb-1 inline-flex rounded-lg bg-blue-500 px-3 py-1 text-lg font-bold text-white">Group {show.teamGroup}</span> : null}
               <span className="block font-medium">{show.name || 'Untitled performance'}</span>
               <span className="block text-xs text-gray-300">{londonDateTime(show.startsAt)}</span>
               <span className="block text-xs text-gray-400">{show.bookingDistinction}</span>

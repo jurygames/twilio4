@@ -73,6 +73,8 @@ async function validateSendGroup(request, accessToken, {
   const canonicalListed = { ...listed, startsAt: listedStart, endsAt: listedEnd, contactsExpireAt: listedExpiry };
 
   if (request.groupKind === 'custom') {
+    // A manually pasted show list must not bypass explicit customer team membership.
+    if (listed.teamGroup || /:group:[1-9][0-9]{0,2}$/.test(request.showId)) return { ok: false, status: 409, error: 'recipient_group_changed' };
     if (canonicalTimestamp(request.expiresAtIso) !== listedExpiry) {
       return { ok: false, status: 409, error: 'show_changed_during_read' };
     }
