@@ -757,3 +757,22 @@ test('ambiguous dispatch retry reuses the original approval and request, without
   assert.deepEqual(mock.calls.map(c => c.url), ['/api/send-approve', '/api/send', '/api/send']);
   assert.deepEqual(mock.calls[1].body, mock.calls[2].body);
 });
+
+test('team tabs authorize only current team recipients, and deny manually pasted team lists', async () => {
+  const showId = 'synthetic-calendar:group:1';
+  const show = {showId, teamGroup: 1, teamGroupCount: 2, name: 'Synthetic Jury Duty · Group 1',
+    startsAt: '2030-01-01T19:00:00.000Z', endsAt: '2030-01-01T21:00:00.000Z',
+    contactsExpireAt: '2030-01-03T21:00:00.000Z', source: 'direct', deliveryType: 'direct_booking',
+    bookingDistinction: 'Direct booking', status: 'ready'};
+  const request = {groupKind: 'automatic', groupScope: 'show', showId, showName: show.name, showStartsAt: show.startsAt,
+    showEndsAt: show.endsAt, showLocation: null, expiresAtIso: show.contactsExpireAt, deliveryType: show.deliveryType,
+    bookingDistinction: show.bookingDistinction, recipients: ['+12025550100']};
+  const deps = {now: Date.parse('2030-01-01T12:00:00Z'), listShows: async () => ({shows:[show]}),
+    readRecipients: async (_token, id) => { assert.equal(id, showId); return {
+      showId, status:'ready', show:{id:showId, startsAt:show.startsAt, endsAt:show.endsAt, source:show.source, deliveryType:show.deliveryType},
+      expiresAtIso:show.contactsExpireAt, recipients:[{number:'+12025550100', reviewRequired:false}]
+    }; }};
+  assert.equal((await validateSendGroup(request, 'fixture', deps)).ok, true);
+  assert.equal((await validateSendGroup({...request, recipients:['+12025550101']}, 'fixture', deps)).error, 'recipient_group_changed');
+  assert.equal((await validateSendGroup({...request, groupKind:'custom'}, 'fixture', deps)).error, 'recipient_group_changed');
+});
