@@ -1,3 +1,4 @@
+import sessionRenewal from '../lib/sessionRenewal';
 // components/TemplateManager.js
 import { useState, useEffect } from 'react';
 
@@ -11,7 +12,7 @@ export default function TemplateManager() {
 
   // Fetch templates on mount and refresh
   const fetchTemplates = async () => {
-    const res = await fetch('/api/templates');
+    const res = await sessionRenewal.messagingFetch('/api/templates');
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !Array.isArray(data.templates)) {
       setError(data.error || 'Templates are unavailable.');
@@ -45,7 +46,7 @@ export default function TemplateManager() {
   const saveTemplate = async (index) => {
     const tpl = templates[index];
     const { id, ...fields } = tpl;
-    const res = await fetch(`/api/templates/${id}`, {
+    const res = await sessionRenewal.messagingFetch(`/api/templates/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', 'x-jurygames-request': '1' },
       body: JSON.stringify(fields),
@@ -72,7 +73,7 @@ export default function TemplateManager() {
     if (!confirm('Are you sure you want to PERMANENTLY delete this template?')) {
       return;
     }
-    const res = await fetch(`/api/templates/${tpl.id}`, { method: 'DELETE', headers: { 'x-jurygames-request': '1' } });
+    const res = await sessionRenewal.messagingFetch(`/api/templates/${tpl.id}`, { method: 'DELETE', headers: { 'x-jurygames-request': '1' } });
     if (!res.ok) {
       setError('Template deletion failed.');
       return;
@@ -96,7 +97,7 @@ export default function TemplateManager() {
       media_url: '',
       summary: ''
     };
-    const res = await fetch('/api/templates', {
+    const res = await sessionRenewal.messagingFetch('/api/templates', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-jurygames-request': '1' },
       body: JSON.stringify(newTpl),
