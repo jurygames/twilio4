@@ -66,17 +66,59 @@ export default async function handler(req, res) {
     }
   }
 
+  if (req.method === 'PATCH') {
+    if (!isTrustedMutation(req)) return res.status(403).json({ error: 'same_origin_required' });
+    const refreshToken = parseCookie(req.headers.cookie, REFRESH_COOKIE);
+    if (!refreshToken) return res.status(401).json({ error: 'authentication_required' });
+    try {
+      // A second tab may already have refreshed the shared cookies.
+      const existing = await currentMessagingUser(req);
+      if (existing && existing.expiresAt - Date.now() > 120_000) {
+        return res.status(200).json({ role: existing.role, canSend: canSend(), expiresAt: existing.expiresAt });
+      }
+      const { data, error } = await createAuthSupabaseClient().auth.refreshSession({ refresh_token: refreshToken });
+      if (error) {
+        const invalid = ['refresh_token_not_found', 'refresh_token_already_used', 'session_not_found', 'session_expired', 'user_banned', 'user_not_found'].includes(error.code) || error.status === 401 || error.status === 403;
+        // Do not delete cookies on a failed rotation: another tab may have
+        // succeeded. The browser can check the latest shared session.
+        return res.status(invalid ? 401 : 503).json({ error: invalid ? 'authentication_required' : 'authentication_unavailable' });
+      }
+      const token = data?.session?.access_token;
+      const nextRefresh = data?.session?.refresh_token;
+      const expiresAt = data?.user && typeof token === 'string' ? sessionExpiresAt(token, data.user.id) : null;
+      if (!expiresAt || expiresAt <= Date.now() || typeof nextRefresh !== 'string' || !nextRefresh || nextRefresh.length > 4096 || token.length > 4096) {
+        return res.status(503).json({ error: 'authentication_unavailable' });
+      }
+      // Keep the rotated token even if the role lookup has a temporary outage.
+      // Every protected endpoint still performs its own live role check.
+      res.setHeader('Set-Cookie', [buildCookie(token), buildRefreshCookie(nextRefresh)]);
+      const role = await resolveMessagingRole(token);
+      if (!role) {
+        return res.status(403).json({ error: 'messaging_role_required' });
+      }
+      return res.status(200).json({ role, canSend: canSend(), expiresAt });
+    } catch {
+      return res.status(503).json({ error: 'authentication_unavailable' });
+    }
+  }
+
   if (req.method === 'DELETE') {
     if (!isTrustedMutation(req)) return res.status(403).json({ error: 'same_origin_required' });
     const accessToken = parseCookie(req.headers.cookie, SESSION_COOKIE);
     const refreshToken = parseCookie(req.headers.cookie, REFRESH_COOKIE);
-    if (accessToken && refreshToken) {
+    if (refreshToken) {
       try {
         const client = createAuthSupabaseClient();
-        const { error: sessionError } = await client.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
-        if (sessionError) return res.status(503).json({ error: 'sign_out_unavailable' });
-        const { error } = await client.auth.signOut({ scope: 'local' });
-        if (error) return res.status(503).json({ error: 'sign_out_unavailable' });
+        const { error: sessionError } = accessToken
+          ? await client.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
+          : await client.auth.refreshSession({ refresh_token: refreshToken });
+        if (sessionError) {
+          const invalid = ['refresh_token_not_found', 'refresh_token_already_used', 'session_not_found', 'session_expired', 'user_banned', 'user_not_found'].includes(sessionError.code) || sessionError.status === 401 || sessionError.status === 403;
+          if (!invalid) return res.status(503).json({ error: 'sign_out_unavailable' });
+        } else {
+          const { error } = await client.auth.signOut({ scope: 'local' });
+          if (error) return res.status(503).json({ error: 'sign_out_unavailable' });
+        }
       } catch {
         return res.status(503).json({ error: 'sign_out_unavailable' });
       }
