@@ -226,7 +226,8 @@ test('RFC3339 parser accepts equivalent instants and rejects malformed calendar 
   }
 });
 
-test('send request accepts only a bounded E.164 list and ignores caller-supplied template fields', () => {
+test('send request accepts only a bounded E.164 list and ignores caller-supplied template fields', (t) => {
+  t.mock.method(Date, 'now', () => Date.parse('2026-11-19T12:00:00.000Z'));
   const expiry = '2026-11-22T21:00:00.000Z';
   const showGroup = {
     name: 'Synthetic show group',
