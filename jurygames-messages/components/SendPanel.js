@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import previewDispatch from '../lib/previewDispatch';
+
+const { selectTemplates, dispatchPreview } = previewDispatch;
 
 function londonDateTime(value) {
   const date = new Date(value);
@@ -6,7 +9,7 @@ function londonDateTime(value) {
   return new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', dateStyle: 'medium', timeStyle: 'short' }).format(date);
 }
 
-export default function SendPanel({ groups, selectedGroupId, onSelectGroup, selectedShow, canSend, onLog }) {
+export default function SendPanel({ groups, selectedGroupId, onSelectGroup, canSend, onLog }) {
   const [templates, setTemplates] = useState([]);
   const [filterShow, setFilterShow] = useState('');
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
@@ -30,9 +33,7 @@ export default function SendPanel({ groups, selectedGroupId, onSelectGroup, sele
 
   useEffect(() => { fetchTemplates(); }, []);
   const selectedGroup = groups.find(group => group.id === selectedGroupId) || groups[0] || null;
-  const showCategories = [...new Set(templates.map(template => template.show).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-  const filteredTemplates = templates.filter(template => template.show === filterShow && filterShow);
-  const selectedTemplate = filteredTemplates.find(template => template.id === selectedTemplateId) || filteredTemplates[0] || null;
+  const { categories: showCategories, filtered: filteredTemplates, selected: selectedTemplate } = selectTemplates(templates, filterShow, selectedTemplateId);
 
   useEffect(() => {
     if (!pendingData?.group || sendLock.current || pendingData.approvalToken) return;
@@ -86,7 +87,7 @@ export default function SendPanel({ groups, selectedGroupId, onSelectGroup, sele
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'preview_unavailable');
-      setPendingData({ group, show: data.show || null, countryGroups: data.countryGroups || [], exclusions: data.exclusions || null, requestId, template: data.template, previewToken: data.previewToken || null, approvalToken: null, canApprove: Boolean(data.canApprove), warnings: data.warnings || [] });
+      setPendingData({ group, show: data.show || null, recipientCount: data.recipientCount, requestId, template: data.template, previewToken: data.previewToken || null, approvalToken: null, canApprove: Boolean(data.canApprove), warnings: data.warnings || [] });
       setConfirmOpen(true);
       setStatus('');
     } catch (error) {
@@ -109,45 +110,36 @@ export default function SendPanel({ groups, selectedGroupId, onSelectGroup, sele
       if (!approvalToken) {
         setApprovalBusy(true);
         setStatus('Checking approval...');
-        const approvalResponse = await fetch('/api/send-approve', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-jurygames-request': '1' },
-          body: JSON.stringify({
-            group: groupPayload(group), templateId: template.id, requestId,
-            previewToken, consentAcknowledged: true,
-          }),
-        });
-        const approval = await approvalResponse.json().catch(() => ({}));
-        if (approvalResponse.status === 409 && approval.error === 'preview_expired_or_mismatched') {
+      }
+      const { stage, response: res, data } = await dispatchPreview({
+        fetcher: fetch,
+        payload: { group: groupPayload(group), templateId: template.id, requestId },
+        previewToken,
+        approvalToken,
+        onApproved: token => {
+          approvalToken = token;
+          setPendingData(current => current ? { ...current, approvalToken: token } : current);
+        },
+        onDispatch: () => {
+          setApprovalBusy(false);
+          setSending(true);
+          setStatus('Sending...');
+          dispatchStarted = true;
+        },
+      });
+      if (stage === 'approval') {
+        if (res.status === 409 && data.error === 'preview_expired_or_mismatched') {
           setConfirmOpen(false);
           setPendingData(null);
           setStatus('The preview changed or expired. Review a fresh preview. No message was sent.');
           return;
         }
-        if (!approvalResponse.ok || !approval.approvalToken) throw new Error(approval.error || 'approval_unavailable');
-        approvalToken = approval.approvalToken;
-        setPendingData(current => current ? { ...current, approvalToken } : current);
+        throw new Error(data.error || 'approval_unavailable');
       }
-      setApprovalBusy(false);
-      setSending(true);
-      setStatus('Sending...');
-      dispatchStarted = true;
-      const res = await fetch('/api/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-jurygames-request': '1' },
-        body: JSON.stringify({
-          group: groupPayload(group),
-          templateId: template.id,
-          requestId,
-          approvalToken,
-          consentAcknowledged: true,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
       if (res.status === 409 && data.error === 'send_request_already_claimed') {
         setConfirmOpen(false);
         setPendingData(null);
-          const previous = data.status === 'processing'
+        const previous = data.status === 'processing'
           ? 'is still processing or needs manual review'
           : `was ${data.status || 'already'} recorded (${Number(data.acceptedCount || 0)} accepted, ${Number(data.failedCount || 0)} failed)`;
         setStatus(`This request ${previous}. No duplicate was sent. Twilio acceptance does not confirm delivery.`);
@@ -168,7 +160,7 @@ export default function SendPanel({ groups, selectedGroupId, onSelectGroup, sele
       const acceptedCount = Number(data.acceptedCount || 0);
       const failedCount = Number(data.failedCount || 0);
       if (failedCount > 0) {
-        setStatus(`Partially accepted by Twilio: ${acceptedCount} accepted, ${failedCount} failed.`);
+        setStatus(`${acceptedCount ? 'Partially accepted by Twilio' : 'Sending failed'}: ${acceptedCount} accepted, ${failedCount} failed.`);
         onLog({ time: new Date(), type: 'Warning', message: `${template.type} "${template.name}" to ${group.name}: ${acceptedCount} accepted, ${failedCount} failed.` });
       } else {
         setStatus(`Accepted by Twilio (${acceptedCount}); delivery is not confirmed here.`);
@@ -190,7 +182,7 @@ export default function SendPanel({ groups, selectedGroupId, onSelectGroup, sele
     }
   };
 
-  const uniqueRecipients = pendingData?.group ? [...new Set(pendingData.group.list)] : [];
+  const recipientCount = Number.isInteger(pendingData?.recipientCount) ? pendingData.recipientCount : 0;
   const methodLabel = pendingData?.template?.type === 'whatsapp'
     ? 'WhatsApp'
     : pendingData?.template?.type === 'call' ? 'Voice call' : 'SMS';
@@ -227,7 +219,7 @@ export default function SendPanel({ groups, selectedGroupId, onSelectGroup, sele
           <div role="dialog" aria-modal="true" aria-labelledby="send-preview-heading" className="mx-4 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 text-gray-900 dark:bg-gray-800 dark:text-gray-100">
             <h3 id="send-preview-heading" className="mb-3 text-lg font-bold">Review {methodLabel === 'Voice call' ? 'call' : 'message'}</h3>
             <p className="mb-2"><strong>{pendingData.template.name}</strong> · {methodLabel} · {pendingData.template.showCategory}</p>
-            <p className="mb-2"><strong>{pendingData.group.name}</strong> · {uniqueRecipients.length} {uniqueRecipients.length === 1 ? 'recipient' : 'recipients'}</p>
+            <p className="mb-2"><strong>{pendingData.group.name}</strong> · {recipientCount} {recipientCount === 1 ? 'recipient' : 'recipients'}</p>
             {pendingData.group.showId ? <p className="mb-3 text-xs text-gray-400">{pendingData.show?.name || pendingData.group.showName || 'Selected performance'} · {londonDateTime(pendingData.show?.startsAt || pendingData.group.showStartsAt)}</p> : <p className="mb-3 text-xs text-gray-400">Standalone recipient list</p>}
             {pendingData.template.type === 'call' ? (
               <div className="mb-3">
