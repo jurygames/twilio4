@@ -20,7 +20,7 @@ function warningText(code) {
     retention_review_pending: 'A Summons contact-retention review is pending.',
     no_contact_numbers_available: 'No contact numbers are available for this performance.',
     source_unavailable: 'A source is temporarily unavailable.',
-    identity_review_required: 'Summons needs a human review of this show identity.',
+    identity_review_required: 'Summons needs a human review of this show or team identity. Refresh the performance list.',
     expired: 'The Summons contact-retention window has expired.',
     cancelled: 'This performance is cancelled.',
     quarantined: 'This performance is quarantined for review.',
@@ -45,8 +45,8 @@ export default function InternationalGroups({ snapshot, selectedShow, onUseGroup
   const statusWarning = snapshot.status !== 'ready';
   const visibleWarnings = (snapshot.warnings?.length ? snapshot.warnings : [snapshot.status])
     .filter(code => code !== 'consent_and_opt_out_not_recorded');
-  const expired = snapshot.status === 'expired';
-  const unusable = ['cancelled', 'quarantined', 'expired', 'identity_review_required', 'source_unavailable', 'changed'].includes(snapshot.status);
+  const expired = snapshot.status === 'expired' || !snapshot.expiresAtIso || Date.parse(snapshot.expiresAtIso) <= Date.now();
+  const unusable = expired || ['cancelled', 'quarantined', 'expired', 'identity_review_required', 'source_unavailable', 'changed'].includes(snapshot.status);
 
   return (
     <section className="rounded-lg bg-gray-800 p-4" aria-labelledby="recipient-groups-heading">
@@ -129,6 +129,15 @@ export default function InternationalGroups({ snapshot, selectedShow, onUseGroup
 
       {!unusable && !grouped.groups.length && !grouped.needsReview.length && grouped.missingNumberCount === 0 ? (
         <p className="rounded bg-gray-900 p-3 text-sm text-gray-300">No contact numbers are available for this performance.</p>
+      ) : null}
+      {!unusable && Array.isArray(snapshot.emails) && snapshot.emails.length > 0 ? (
+        <article className="mt-4 rounded bg-gray-900 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div><h3 className="font-semibold">Email addresses — {snapshot.emails.length}</h3><p className="text-xs text-gray-400">For this performance only. Copy for use in your own email client; no email is sent by Summons.</p></div>
+            <button type="button" className="rounded bg-gray-700 px-3 py-1 text-sm" onClick={() => handleCopy('emails', snapshot.emails)}>{copied === 'emails' ? 'Copied' : 'Copy email addresses'}</button>
+          </div>
+          <ul className="mt-2 space-y-1 text-sm text-gray-300">{snapshot.emails.map(email => <li key={email} className="break-all font-mono">{email}</li>)}</ul>
+        </article>
       ) : null}
       {expired ? <p className="mt-2 text-sm text-red-300">This show's contact-retention window has expired. Numbers are unavailable.</p> : null}
     </section>
