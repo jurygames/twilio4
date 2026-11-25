@@ -1,4 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import previewDispatch from '../lib/previewDispatch';
+
+const { selectTemplates, dispatchPreview } = previewDispatch;
 
 function londonDateTime(value) {
   const date = new Date(value);
@@ -6,13 +9,14 @@ function londonDateTime(value) {
   return new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', dateStyle: 'medium', timeStyle: 'short' }).format(date);
 }
 
-export default function SendPanel({ groups, selectedGroupId, onSelectGroup, selectedShow, canSend, onLog }) {
+export default function SendPanel({ groups, selectedGroupId, onSelectGroup, canSend, onLog }) {
   const [templates, setTemplates] = useState([]);
-  const [selectedTemplateIndex, setSelectedTemplateIndex] = useState(0);
+  const [filterShow, setFilterShow] = useState('');
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const sendLock = useRef(false);
   const [status, setStatus] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingData, setPendingData] = useState(null);
-  const [consentAcknowledged, setConsentAcknowledged] = useState(false);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [approvalBusy, setApprovalBusy] = useState(false);
   const [sending, setSending] = useState(false);
@@ -29,16 +33,15 @@ export default function SendPanel({ groups, selectedGroupId, onSelectGroup, sele
 
   useEffect(() => { fetchTemplates(); }, []);
   const selectedGroup = groups.find(group => group.id === selectedGroupId) || groups[0] || null;
-  const filteredTemplates = templates;
+  const { categories: showCategories, filtered: filteredTemplates, selected: selectedTemplate } = selectTemplates(templates, filterShow, selectedTemplateId);
 
   useEffect(() => {
-    if (!pendingData?.group) return;
+    if (!pendingData?.group || sendLock.current || pendingData.approvalToken) return;
     const current = groups.find(group => group.id === pendingData.group.id);
     if (!current || JSON.stringify(current) !== JSON.stringify(pendingData.group) ||
         Date.parse(current.expiresAtIso || '') <= Date.now()) {
       setConfirmOpen(false);
       setPendingData(null);
-      setConsentAcknowledged(false);
       setStatus('The selected show or recipient list changed or expired. Review a fresh preview before approving.');
     }
   }, [groups, pendingData]);
@@ -61,15 +64,13 @@ export default function SendPanel({ groups, selectedGroupId, onSelectGroup, sele
   });
 
   const closePreview = () => {
-    if (sending || approvalBusy) return;
+    if (sendLock.current || sending || approvalBusy) return;
     setConfirmOpen(false);
     setPendingData(null);
-    setConsentAcknowledged(false);
   };
 
   const openPreview = async () => {
     const group = selectedGroup;
-    const selectedTemplate = filteredTemplates[selectedTemplateIndex];
     const requestId = globalThis.crypto?.randomUUID?.();
     if (!group || !selectedTemplate || !requestId) {
       setStatus('Select a group and template before reviewing the send.');
@@ -86,10 +87,9 @@ export default function SendPanel({ groups, selectedGroupId, onSelectGroup, sele
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'preview_unavailable');
-      setPendingData({ group, show: data.show || null, countryGroups: data.countryGroups || [], exclusions: data.exclusions || null, requestId, template: data.template, previewToken: data.previewToken || null, approvalToken: null, canApprove: Boolean(data.canApprove), warnings: data.warnings || [] });
-      setConsentAcknowledged(false);
+      setPendingData({ group, show: data.show || null, recipientCount: data.recipientCount, requestId, template: data.template, previewToken: data.previewToken || null, approvalToken: null, canApprove: Boolean(data.canApprove), warnings: data.warnings || [] });
       setConfirmOpen(true);
-      setStatus('Review the exact server-loaded template and recipient list.');
+      setStatus('');
     } catch (error) {
       setStatus(`Preview unavailable (${error.message}). No message was sent.`);
     } finally {
@@ -97,62 +97,48 @@ export default function SendPanel({ groups, selectedGroupId, onSelectGroup, sele
     }
   };
 
-  const approvePreview = async () => {
-    if (approvalBusy || sending || !canSend || !consentAcknowledged || !pendingData?.template) return;
-    setApprovalBusy(true);
-    setStatus('Recording your approval...');
+  // One explicit operator confirmation; retain both server checks and the original
+  // request ID. An ambiguous dispatch may only be retried with that same ID.
+  const approveAndSend = async () => {
+    if (sendLock.current || approvalBusy || sending || !canSend || !pendingData?.canApprove || !pendingData.template || pendingData.retryBlocked) return;
+    sendLock.current = true;
+    const { group, template, requestId, previewToken } = pendingData;
+    let approvalToken = pendingData.approvalToken;
+    const wasRetry = Boolean(approvalToken);
+    let dispatchStarted = false;
     try {
-      const res = await fetch('/api/send-approve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-jurygames-request': '1' },
-        body: JSON.stringify({
-          group: groupPayload(pendingData.group),
-          templateId: pendingData.template.id,
-          requestId: pendingData.requestId,
-          previewToken: pendingData.previewToken,
-          consentAcknowledged: true,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.status === 409 && data.error === 'preview_expired_or_mismatched') {
-        setConfirmOpen(false);
-        setPendingData(null);
-        setConsentAcknowledged(false);
-        setStatus('The preview changed or expired. Review it again before approving. No message was sent.');
-        return;
+      if (!approvalToken) {
+        setApprovalBusy(true);
+        setStatus('Checking approval...');
       }
-      if (!res.ok || !data.approvalToken) throw new Error(data.error || 'approval_unavailable');
-      setPendingData(current => current ? { ...current, approvalToken: data.approvalToken } : current);
-      setStatus('Preview approved. Confirm the send before Twilio is contacted.');
-    } catch (error) {
-      setStatus(`Approval unavailable (${error.message}). No message was sent.`);
-    } finally {
-      setApprovalBusy(false);
-    }
-  };
-
-  const confirmSend = async () => {
-    if (sending || !canSend || !consentAcknowledged || !pendingData?.approvalToken) return;
-    setSending(true);
-    setStatus('Sending...');
-    try {
-      const { group, template, requestId, approvalToken } = pendingData;
-      const res = await fetch('/api/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-jurygames-request': '1' },
-        body: JSON.stringify({
-          group: groupPayload(group),
-          templateId: template.id,
-          requestId,
-          approvalToken,
-          consentAcknowledged,
-        }),
+      const { stage, response: res, data } = await dispatchPreview({
+        fetcher: fetch,
+        payload: { group: groupPayload(group), templateId: template.id, requestId },
+        previewToken,
+        approvalToken,
+        onApproved: token => {
+          approvalToken = token;
+          setPendingData(current => current ? { ...current, approvalToken: token } : current);
+        },
+        onDispatch: () => {
+          setApprovalBusy(false);
+          setSending(true);
+          setStatus('Sending...');
+          dispatchStarted = true;
+        },
       });
-      const data = await res.json().catch(() => ({}));
+      if (stage === 'approval') {
+        if (res.status === 409 && data.error === 'preview_expired_or_mismatched') {
+          setConfirmOpen(false);
+          setPendingData(null);
+          setStatus('The preview changed or expired. Review a fresh preview. No message was sent.');
+          return;
+        }
+        throw new Error(data.error || 'approval_unavailable');
+      }
       if (res.status === 409 && data.error === 'send_request_already_claimed') {
         setConfirmOpen(false);
         setPendingData(null);
-        setConsentAcknowledged(false);
         const previous = data.status === 'processing'
           ? 'is still processing or needs manual review'
           : `was ${data.status || 'already'} recorded (${Number(data.acceptedCount || 0)} accepted, ${Number(data.failedCount || 0)} failed)`;
@@ -160,15 +146,21 @@ export default function SendPanel({ groups, selectedGroupId, onSelectGroup, sele
         return;
       }
       if (res.status === 409 && data.error === 'approval_expired_or_mismatched') {
-        setPendingData(current => current ? { ...current, approvalToken: null } : current);
-        setStatus('The preview expired or changed. Review the preview and approve it again. No message was sent.');
+        if (wasRetry) {
+          setPendingData(current => current ? { ...current, retryBlocked: true } : current);
+          setStatus('The previous send outcome is unknown and its approval expired or changed. Check the send outcome before starting another request.');
+        } else {
+          setConfirmOpen(false);
+          setPendingData(null);
+          setStatus('The approval expired or changed. Review a fresh preview. No message was sent.');
+        }
         return;
       }
       if (!res.ok) throw new Error(data.error || 'send_not_confirmed');
       const acceptedCount = Number(data.acceptedCount || 0);
       const failedCount = Number(data.failedCount || 0);
       if (failedCount > 0) {
-        setStatus(`Partially accepted by Twilio: ${acceptedCount} accepted, ${failedCount} failed.`);
+        setStatus(`${acceptedCount ? 'Partially accepted by Twilio' : 'Sending failed'}: ${acceptedCount} accepted, ${failedCount} failed.`);
         onLog({ time: new Date(), type: 'Warning', message: `${template.type} "${template.name}" to ${group.name}: ${acceptedCount} accepted, ${failedCount} failed.` });
       } else {
         setStatus(`Accepted by Twilio (${acceptedCount}); delivery is not confirmed here.`);
@@ -176,16 +168,21 @@ export default function SendPanel({ groups, selectedGroupId, onSelectGroup, sele
       }
       setConfirmOpen(false);
       setPendingData(null);
-      setConsentAcknowledged(false);
     } catch (error) {
-      setStatus(`Send not confirmed (${error.message}). Retry here to reuse the same approval and request ID.`);
-      onLog({ time: new Date(), type: 'Error', message: 'Send outcome is unknown; retries must reuse the same approval and request ID.' });
+      if (dispatchStarted) {
+        setStatus(`Send not confirmed (${error.message}). Retry this same request; do not start a new send until the outcome is known.`);
+        onLog({ time: new Date(), type: 'Error', message: 'Send outcome is unknown; retries must reuse the same approval and request ID.' });
+      } else {
+        setStatus(`Approval unavailable (${error.message}). No message was sent.`);
+      }
     } finally {
+      sendLock.current = false;
+      setApprovalBusy(false);
       setSending(false);
     }
   };
 
-  const uniqueRecipients = pendingData?.group ? [...new Set(pendingData.group.list)] : [];
+  const recipientCount = Number.isInteger(pendingData?.recipientCount) ? pendingData.recipientCount : 0;
   const methodLabel = pendingData?.template?.type === 'whatsapp'
     ? 'WhatsApp'
     : pendingData?.template?.type === 'call' ? 'Voice call' : 'SMS';
@@ -195,43 +192,35 @@ export default function SendPanel({ groups, selectedGroupId, onSelectGroup, sele
       <h2 className="text-xl font-semibold mb-2">Send Message or Call</h2>
 
       <label className="block text-sm mb-1" htmlFor="send-group">Recipient group</label>
-      <select id="send-group" className="w-full mb-2 p-2 bg-gray-800 rounded" value={selectedGroup?.id || ''} onChange={event => onSelectGroup?.(event.target.value)} disabled={!groups.length}>
+      <select id="send-group" className="w-full mb-2 p-2 bg-gray-800 rounded" value={selectedGroup?.id || ''} onChange={event => onSelectGroup?.(event.target.value)} disabled={!groups.length || previewBusy || confirmOpen}>
         {!groups.length ? <option value="">Choose a show or create a custom list</option> : null}
         {groups.map(group => <option key={group.id} value={group.id}>{group.name} ({group.list.length} {group.list.length === 1 ? 'number' : 'numbers'})</option>)}
       </select>
 
-      <label className="block text-sm mb-1" htmlFor="send-template">Approved message/call template</label>
-      <select id="send-template" className="w-full mb-2 p-2 bg-gray-800 rounded" value={selectedTemplateIndex} onChange={event => setSelectedTemplateIndex(Number(event.target.value))} disabled={!filteredTemplates.length}>
-        {filteredTemplates.map((template, index) => <option key={template.id || index} value={index}>{template.name} · {template.type} · content category: {template.show}</option>)}
+      <label className="block text-sm mb-1" htmlFor="send-show-category">Select show</label>
+      <select id="send-show-category" className="w-full mb-2 p-2 bg-gray-800 rounded" value={filterShow} onChange={event => { setFilterShow(event.target.value); setSelectedTemplateId(''); }} disabled={!showCategories.length || previewBusy || confirmOpen}>
+        <option value="">-- Select a show --</option>
+        {showCategories.map(show => <option key={show} value={show}>{show}</option>)}
       </select>
 
-      <button className="bg-green-500 px-4 py-2 rounded disabled:opacity-50" onClick={openPreview} disabled={previewBusy || !selectedGroup || !filteredTemplates.length}>
+      <label className="block text-sm mb-1" htmlFor="send-template">Message/call template</label>
+      <select id="send-template" className="w-full mb-2 p-2 bg-gray-800 rounded" value={selectedTemplate?.id || ''} onChange={event => setSelectedTemplateId(event.target.value)} disabled={!filteredTemplates.length || previewBusy || confirmOpen}>
+        {!filteredTemplates.length ? <option value="">Choose a show first</option> : null}
+        {filteredTemplates.map(template => <option key={template.id} value={template.id}>{template.name} · {template.type === 'call' ? 'Call' : template.type === 'whatsapp' ? 'WhatsApp' : 'SMS'}</option>)}
+      </select>
+
+      <button className="bg-green-500 px-4 py-2 rounded disabled:opacity-50" onClick={openPreview} disabled={previewBusy || confirmOpen || !selectedGroup || !selectedTemplate}>
         {previewBusy ? 'Loading preview...' : 'Review Send'}
       </button>
       <p className="mt-2 text-gray-300" role="status">{status}</p>
 
       {confirmOpen && pendingData?.group && pendingData?.template ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="mx-4 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 text-gray-900 dark:bg-gray-800 dark:text-gray-100">
-            <h3 className="mb-4 text-lg font-bold">Review Message Preview</h3>
-            <p className="mb-2">Template content category: <strong>{pendingData.template.showCategory}</strong> <span className="text-xs text-gray-500">(not a show ID)</span></p>
-            <p className="mb-2">Method: <strong>{methodLabel}</strong></p>
-            <p className="mb-2">Template: <strong>{pendingData.template.name}</strong></p>
-            <p className="mb-2">Sender: <strong>{pendingData.template.from}</strong></p>
-            {pendingData.group.showId ? (
-              <>
-            <p className="mb-2">Exact show: <strong>{pendingData.show?.name || pendingData.group.showName || selectedShow?.name || 'Selected performance'}</strong></p>
-                <p className="mb-2">Performance: <strong>{londonDateTime(pendingData.show?.startsAt || pendingData.group.showStartsAt || selectedShow?.startsAt)}</strong> · {pendingData.show?.deliveryType || pendingData.group.deliveryType || selectedShow?.deliveryType || 'type needs review'} · {pendingData.show?.bookingDistinction || pendingData.group.bookingDistinction || selectedShow?.bookingDistinction || 'booking type needs review'}{(pendingData.show?.location || pendingData.group.showLocation || selectedShow?.location) ? ` · ${pendingData.show?.location || pendingData.group.showLocation || selectedShow?.location}` : ''}</p>
-                <p className="mb-2 break-all font-mono text-xs">Show ID: {pendingData.group.showId}</p>
-              </>
-            ) : <p className="mb-2">Standalone list; expiry: <strong>{new Date(pendingData.group.expiresAtIso).toLocaleString('en-GB', { timeZone: 'Europe/London' })}</strong> London time</p>}
-            <p className="mb-2">Recipient group: <strong>{pendingData.group.name}</strong> · {uniqueRecipients.length} unique recipients</p>
-            <p className="mb-2 text-xs text-gray-400">Country groups: {(pendingData.countryGroups || []).map(item => `${item.label}: ${item.count}`).join(' · ') || 'needs review'}</p>
-            {pendingData.exclusions?.source === 'summons' ? (
-              <p className="mb-2 text-xs text-gray-400">Excluded from the automatic list: {pendingData.exclusions.missingNumberCount} missing number{pendingData.exclusions.missingNumberCount === 1 ? '' : 's'} · {pendingData.exclusions.needsReviewCount} needing review.</p>
-            ) : <p className="mb-2 text-xs text-gray-400">Manual list: numbers were checked for format and duplicates; verify the list is complete and each recipient is eligible.</p>}
-            <p className="mb-2 text-xs text-gray-400">{pendingData.group.kind === 'automatic' ? 'Summons contact list' : 'Manual custom list'} · expires {pendingData.group.expiresAtIso ? new Date(pendingData.group.expiresAtIso).toLocaleString('en-GB', { timeZone: 'Europe/London' }) : 'not recorded'} London time</p>
-            <p className="mb-2 text-xs text-gray-400">Estimated cost: unavailable for this preview.</p>
+          <div role="dialog" aria-modal="true" aria-labelledby="send-preview-heading" className="mx-4 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 text-gray-900 dark:bg-gray-800 dark:text-gray-100">
+            <h3 id="send-preview-heading" className="mb-3 text-lg font-bold">Review {methodLabel === 'Voice call' ? 'call' : 'message'}</h3>
+            <p className="mb-2"><strong>{pendingData.template.name}</strong> · {methodLabel} · {pendingData.template.showCategory}</p>
+            <p className="mb-2"><strong>{pendingData.group.name}</strong> · {recipientCount} {recipientCount === 1 ? 'recipient' : 'recipients'}</p>
+            {pendingData.group.showId ? <p className="mb-3 text-xs text-gray-400">{pendingData.show?.name || pendingData.group.showName || 'Selected performance'} · {londonDateTime(pendingData.show?.startsAt || pendingData.group.showStartsAt)}</p> : <p className="mb-3 text-xs text-gray-400">Standalone recipient list</p>}
             {pendingData.template.type === 'call' ? (
               <div className="mb-3">
                 <p className="mb-1 text-sm font-semibold">Approved call audio</p>
@@ -244,41 +233,15 @@ export default function SendPanel({ groups, selectedGroupId, onSelectGroup, sele
               </>
             )}
             {pendingData.template.summary ? <p className="mb-3 text-sm">{pendingData.template.summary}</p> : null}
-            <details className="mb-3 rounded bg-gray-100 p-2 text-xs dark:bg-gray-900">
-              <summary>Review recipient numbers ({uniqueRecipients.length})</summary>
-              <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap">{uniqueRecipients.join('\n')}</pre>
-            </details>
-            <ul className="mb-3 list-disc pl-5 text-xs text-amber-700 dark:text-amber-300">
-              {(pendingData.warnings || []).map((warning, index) => <li key={index}>{warning}</li>)}
-            </ul>
-            <label className="mb-4 flex items-start gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={consentAcknowledged}
-                disabled={!canSend || !pendingData.canApprove || sending || approvalBusy}
-                onChange={event => {
-                  setConsentAcknowledged(event.target.checked);
-                  if (!event.target.checked) setPendingData(current => current ? { ...current, approvalToken: null } : current);
-                }}
-                className="mt-1"
-              />
-              <span>I confirmed the selected performance, recipient list, message, and any applicable opt-outs.</span>
-            </label>
-            <p className="mb-4 text-xs text-gray-500">Approval expires after two minutes and binds this exact list and template. Twilio acceptance does not confirm delivery.</p>
-            {!canSend || !pendingData.canApprove ? <p className="mb-4 text-sm text-amber-600">Sending is disabled until the messaging safety checks are configured.</p> : null}
-            {pendingData.approvalToken ? <p className="mb-3 text-sm text-green-700">Preview approved; confirm to send.</p> : null}
+            {!pendingData.approvalToken ? <p className="mb-3 text-xs text-gray-400">Confirming sends to this group. Check any applicable opt-outs first.</p> : null}
+            {(pendingData.warnings || []).filter(warning => warning !== 'Verify that this group matches the selected Summons performance and its current retention deadline.').map((warning, index) => <p key={index} className="mb-2 text-sm text-amber-600 dark:text-amber-300">{warning}</p>)}
+            {!canSend || !pendingData.canApprove ? <p className="mb-3 text-sm text-amber-600">Sending is unavailable.</p> : null}
             {status ? <p role="status" className="mb-3 text-sm">{status}</p> : null}
             <div className="flex justify-end space-x-2">
-              <button className="rounded bg-gray-300 px-4 py-2 dark:bg-gray-700" onClick={closePreview} disabled={sending || approvalBusy}>Cancel</button>
-              {!pendingData.approvalToken ? (
-                <button className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50" onClick={approvePreview} disabled={approvalBusy || sending || !canSend || !pendingData.canApprove || !consentAcknowledged}>
-                  {approvalBusy ? 'Approving...' : 'Approve Preview'}
-                </button>
-              ) : (
-                <button className="rounded bg-green-600 px-4 py-2 text-white disabled:opacity-50" onClick={confirmSend} disabled={sending || approvalBusy || !canSend || !consentAcknowledged}>
-                  {sending ? 'Sending...' : 'Confirm and Send'}
-                </button>
-              )}
+              <button className="rounded bg-gray-300 px-4 py-2 dark:bg-gray-700" onClick={closePreview} disabled={sending || approvalBusy}>{pendingData.approvalToken ? 'Close' : 'Cancel'}</button>
+              <button className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50" onClick={approveAndSend} disabled={approvalBusy || sending || !canSend || !pendingData.canApprove || pendingData.retryBlocked}>
+                {approvalBusy || sending ? 'Sending...' : pendingData.approvalToken ? 'Retry same request' : pendingData.template.type === 'call' ? 'Confirm & Call' : 'Confirm & Send'}
+              </button>
             </div>
           </div>
         </div>
