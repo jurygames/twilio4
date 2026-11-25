@@ -79,6 +79,10 @@ async function getSummonsShowRecipients(accessToken, showId, options) {
   if (payload.recipients.some(recipient => !recipient || typeof recipient.number !== 'string')) {
     throw new SummonsMessagingApiError(503, 'show_source_unavailable');
   }
+  if (payload.emails !== undefined && (!Array.isArray(payload.emails) || payload.emails.length > 1000 ||
+      payload.emails.some(email => typeof email !== 'string' || email.length > 320 || !/^[^\s@<>;,]+@[^\s@<>;,]+\.[^\s@<>;,]+$/.test(email)))) {
+    throw new SummonsMessagingApiError(503, 'show_source_unavailable');
+  }
   return payload;
 }
 
