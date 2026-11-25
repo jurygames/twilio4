@@ -680,3 +680,80 @@ test('database clients use an authenticated user token and never require a servi
   assert.match(sendSource, /userClient\.rpc\('claim_jg_message_send'/);
   assert.match(templatesSource, /\.from\('jg_messaging_templates'\)/);
 });
+
+
+// Messaging UI transport: no real fetch, no real Twilio.
+const { selectTemplates, dispatchPreview } = require('../lib/previewDispatch');
+test('show selector isolates story templates and cannot retain a template from another category', () => {
+  const templates = [
+    { id: 'a', show: 'Harry Briggs', type: 'call' },
+    { id: 'b', show: 'Harry Briggs', type: 'sms' },
+    { id: 'c', show: 'Scott Davies', type: 'sms' },
+    { id: 'd', show: 'Christmas Party', type: 'sms' },
+  ];
+  assert.deepEqual(selectTemplates(templates, '', '').filtered, []);
+  const harry = selectTemplates(templates, 'Harry Briggs', 'b');
+  assert.deepEqual(harry.categories, ['Christmas Party', 'Harry Briggs', 'Scott Davies']);
+  assert.deepEqual(harry.filtered.map(t => t.id), ['a', 'b']);
+  assert.equal(harry.selected.id, 'b');
+  assert.equal(selectTemplates(templates, 'Scott Davies', 'b').selected.id, 'c');
+  assert.equal(selectTemplates(templates, 'missing', 'b').selected, null);
+});
+
+function mockedDispatch(responses) {
+  const calls = [];
+  const approved = [];
+  let dispatchCount = 0;
+  const payload = { group: { name: 'fixture', list: ['synthetic'] }, templateId: 't1', requestId: 'fixture-request-id' };
+  const fetcher = async (url, options) => {
+    calls.push({ url, body: JSON.parse(options.body), headers: options.headers });
+    const next = responses.shift();
+    if (next instanceof Error) throw next;
+    assert.ok(next, 'unexpected request');
+    return { ok: next.status >= 200 && next.status < 300, status: next.status, json: async () => next.body };
+  };
+  return { calls, approved, payload, get dispatchCount() { return dispatchCount; }, run: approvalToken => dispatchPreview({
+    fetcher, payload, previewToken: 'fixture-preview', approvalToken,
+    onApproved: token => approved.push(token), onDispatch: () => { dispatchCount++; },
+  }) };
+}
+
+test('one confirmation approves then dispatches the same exact request', async () => {
+  const mock = mockedDispatch([
+    { status: 200, body: { approvalToken: 'fixture-approval' } },
+    { status: 200, body: { acceptedCount: 1 } },
+  ]);
+  const result = await mock.run();
+  assert.equal(result.stage, 'dispatch');
+  assert.deepEqual(mock.calls.map(c => c.url), ['/api/send-approve', '/api/send']);
+  assert.deepEqual(mock.approved, ['fixture-approval']);
+  assert.equal(mock.dispatchCount, 1);
+  assert.deepEqual(mock.calls[0].body, { ...mock.payload, previewToken: 'fixture-preview', consentAcknowledged: true });
+  assert.deepEqual(mock.calls[1].body, { ...mock.payload, approvalToken: 'fixture-approval', consentAcknowledged: true });
+  assert.equal(mock.calls[1].headers['x-jurygames-request'], '1');
+});
+
+test('expired or tokenless approval never contacts the dispatch endpoint', async () => {
+  for (const response of [
+    { status: 409, body: { error: 'preview_expired_or_mismatched' } },
+    { status: 200, body: {} },
+  ]) {
+    const mock = mockedDispatch([response]);
+    assert.equal((await mock.run()).stage, 'approval');
+    assert.equal(mock.calls.length, 1);
+    assert.equal(mock.dispatchCount, 0);
+  }
+});
+
+test('ambiguous dispatch retry reuses the original approval and request, without reapproving', async () => {
+  const mock = mockedDispatch([
+    { status: 200, body: { approvalToken: 'fixture-approval' } },
+    new Error('network lost'),
+    { status: 409, body: { error: 'send_request_already_claimed' } },
+  ]);
+  await assert.rejects(mock.run(), /network lost/);
+  const result = await mock.run(mock.approved[0]);
+  assert.equal(result.response.status, 409);
+  assert.deepEqual(mock.calls.map(c => c.url), ['/api/send-approve', '/api/send', '/api/send']);
+  assert.deepEqual(mock.calls[1].body, mock.calls[2].body);
+});
